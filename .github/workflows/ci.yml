@@ -42,17 +42,13 @@ jobs:
         run: bun run check:pages
 
   visual-regression:
-    name: Visual regression (${{ matrix.shard_name }})
+    name: Visual regression (${{ matrix.suite }})
     runs-on: windows-2022
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - shard_index: 0
-            shard_name: 1-of-2
-          - shard_index: 1
-            shard_name: 2-of-2
+        suite: [scene-matrix, fish-habituation]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,14 +69,13 @@ jobs:
       - name: Run browser and WebGL regression harness
         run: bun run visual:test
         env:
-          VISUAL_SHARD_INDEX: ${{ matrix.shard_index }}
-          VISUAL_SHARD_TOTAL: 2
+          VISUAL_SUITE: ${{ matrix.suite }}
 
       - name: Upload visual evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ocean-visual-results-${{ matrix.shard_name }}
+          name: ocean-visual-results-${{ matrix.suite }}
           path: |
             visual-results/
             test-results/

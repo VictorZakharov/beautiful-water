@@ -116,20 +116,16 @@ const views = [
   },
 ];
 
-const visualShardIndex = Number(process.env.VISUAL_SHARD_INDEX ?? 0);
-const visualShardTotal = Number(process.env.VISUAL_SHARD_TOTAL ?? 1);
-if (
-  !Number.isInteger(visualShardIndex)
-  || !Number.isInteger(visualShardTotal)
-  || visualShardTotal < 1
-  || visualShardIndex < 0
-  || visualShardIndex >= visualShardTotal
-) {
-  throw new Error(
-    `Invalid visual shard ${visualShardIndex + 1} of ${visualShardTotal}`,
-  );
+const visualSuite = process.env.VISUAL_SUITE ?? 'all';
+const visualSuites = {
+  all: views,
+  'scene-matrix': views.filter((view) => view.name !== 'underwater-fish-calm'),
+  'fish-habituation': views.filter((view) => view.name === 'underwater-fish-calm'),
+};
+if (!Object.hasOwn(visualSuites, visualSuite)) {
+  throw new Error(`Unknown visual suite: ${visualSuite}`);
 }
-const captureViews = views.filter((_, index) => index % visualShardTotal === visualShardIndex);
+const captureViews = visualSuites[visualSuite];
 
 test('capture ocean regression views', async ({ page }, testInfo) => {
   const waveCorrelations = [0, fixedTime, 29.5].map((time) => ({
@@ -243,7 +239,7 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
       frameCount: loaderRuntime.frames.length,
       graphicsRenderer,
       frameGapBudget: loaderFrameGapBudget,
-      shard: { index: visualShardIndex, total: visualShardTotal },
+      suite: visualSuite,
       maxFrameGap: maxLoaderFrameGap,
       worstFrameGap: { ...worstLoaderGap, stage: stageAtWorstGap },
     }, null, 2)}\n`,
