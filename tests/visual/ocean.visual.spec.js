@@ -197,6 +197,7 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
   });
   const softwareRenderer = /basic render|llvmpipe|software|swiftshader|warp/i
     .test(graphicsRenderer);
+  if (softwareRenderer) testInfo.setTimeout(8 * 60_000);
   // Hosted runners rasterize the first 1600 by 900 ocean frame on the CPU.
   // Keep physical GPUs on an interactive budget while still bounding that
   // deterministic software warm-up so a genuine infinite stall cannot pass.
