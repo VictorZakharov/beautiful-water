@@ -51,7 +51,7 @@ point.
 
 The included Playwright harness starts Vite, freezes the simulation clock, and captures twenty
 named regression views at 1600 by 900 locally. GPU-less CI runs the same camera matrix at 960 by
-540 through bundled Chromium and SwiftShader across two parallel shards, keeping the required
+540 through Chromium across two parallel software-renderer-safe shards, keeping the required
 check deterministic and bounded without dropping coverage. Coverage includes:
 
 - the sun path, cross-sun grazing angles, opposite-sun water, and top-down rendering;
