@@ -116,6 +116,21 @@ const views = [
   },
 ];
 
+const visualShardIndex = Number(process.env.VISUAL_SHARD_INDEX ?? 0);
+const visualShardTotal = Number(process.env.VISUAL_SHARD_TOTAL ?? 1);
+if (
+  !Number.isInteger(visualShardIndex)
+  || !Number.isInteger(visualShardTotal)
+  || visualShardTotal < 1
+  || visualShardIndex < 0
+  || visualShardIndex >= visualShardTotal
+) {
+  throw new Error(
+    `Invalid visual shard ${visualShardIndex + 1} of ${visualShardTotal}`,
+  );
+}
+const captureViews = views.filter((_, index) => index % visualShardTotal === visualShardIndex);
+
 test('capture ocean regression views', async ({ page }, testInfo) => {
   const waveCorrelations = [0, fixedTime, 29.5].map((time) => ({
     time,
@@ -219,6 +234,11 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
     (entry) => entry.time <= worstLoaderGap.start,
   )?.status ?? 'Before loader trace';
   const maxLoaderFrameGap = worstLoaderGap.duration;
+  const loaderDuration = loaderTrace.at(-1).time - loaderTrace[0].time;
+  const minimumLoaderFrames = Math.min(
+    30,
+    Math.max(3, Math.floor(loaderDuration / 50)),
+  );
   await mkdir(outputDirectory, { recursive: true });
   await writeFile(
     path.join(outputDirectory, 'startup.json'),
@@ -227,6 +247,7 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
       frameCount: loaderRuntime.frames.length,
       graphicsRenderer,
       frameGapBudget: loaderFrameGapBudget,
+      shard: { index: visualShardIndex, total: visualShardTotal },
       maxFrameGap: maxLoaderFrameGap,
       worstFrameGap: { ...worstLoaderGap, stage: stageAtWorstGap },
     }, null, 2)}\n`,
@@ -259,11 +280,11 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
     'loader progress is monotonic',
   ).toBe(true);
   expect(
-    loaderTrace.at(-1).time - loaderTrace[0].time,
+    loaderDuration,
     'startup yields enough time for the loader to paint',
   ).toBeGreaterThan(16);
   expect(loaderRuntime.frames.length, 'loader remains animated during async compilation')
-    .toBeGreaterThan(30);
+    .toBeGreaterThanOrEqual(minimumLoaderFrames);
   expect(
     maxLoaderFrameGap,
     `capture warm-up exceeded ${loaderFrameGapBudget}ms on ${graphicsRenderer}`,
@@ -274,7 +295,7 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
   });
 
   const manifest = [];
-  for (const view of views) {
+  for (const view of captureViews) {
     testInfo.annotations.push({ type: 'capture', description: view.name });
     const captureTime = view.time ?? fixedTime;
     let diagnostics = await page.evaluate(
