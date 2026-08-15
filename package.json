@@ -2,10 +2,31 @@
   "name": "beautiful-water",
   "private": true,
   "version": "1.0.0",
+  "description": "A cinematic procedural shallow-ocean environment rendered with Three.js.",
+  "license": "MIT",
+  "author": "Victor Zakharov",
+  "keywords": [
+    "threejs",
+    "webgl",
+    "water",
+    "ocean",
+    "procedural-generation",
+    "shader"
+  ],
+  "homepage": "https://victorzakharov.github.io/beautiful-water/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/VictorZakharov/beautiful-water.git"
+  },
+  "bugs": {
+    "url": "https://github.com/VictorZakharov/beautiful-water/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
+    "build:pages": "vite build --base=/beautiful-water/",
+    "check:pages": "bun scripts/check-pages-build.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "visual:test": "playwright test --config=playwright.config.js"
   },
@@ -15,5 +36,8 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "vite": "8.2.0"
+  },
+  "engines": {
+    "bun": ">=1.3.11"
   }
 }

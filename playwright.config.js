@@ -9,6 +9,9 @@ const browserCandidates = [
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
 ].filter(Boolean);
 const executablePath = browserCandidates.find((candidate) => existsSync(candidate));
+const angleArguments = process.platform === 'win32'
+  ? ['--use-angle=d3d11']
+  : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 
 export default defineConfig({
   testDir: './tests/visual',
@@ -28,7 +31,7 @@ export default defineConfig({
         '--enable-webgl',
         '--enable-gpu',
         '--ignore-gpu-blocklist',
-        '--use-angle=d3d11',
+        ...angleArguments,
       ],
     },
   },
