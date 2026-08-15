@@ -8,7 +8,14 @@ const browserCandidates = [
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
 ].filter(Boolean);
+const isCI = process.env.CI === 'true' || process.env.CI === '1';
 const executablePath = browserCandidates.find((candidate) => existsSync(candidate));
+const angleArguments = process.platform === 'win32'
+  ? ['--use-angle=d3d11']
+  : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+const viewport = isCI
+  ? { width: 960, height: 540 }
+  : { width: 1600, height: 900 };
 
 export default defineConfig({
   testDir: './tests/visual',
@@ -19,7 +26,7 @@ export default defineConfig({
   reporter: 'line',
   use: {
     baseURL: 'http://127.0.0.1:4173',
-    viewport: { width: 1600, height: 900 },
+    viewport,
     deviceScaleFactor: 1,
     colorScheme: 'dark',
     launchOptions: {
@@ -28,7 +35,7 @@ export default defineConfig({
         '--enable-webgl',
         '--enable-gpu',
         '--ignore-gpu-blocklist',
-        '--use-angle=d3d11',
+        ...angleArguments,
       ],
     },
   },

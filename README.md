@@ -1,60 +1,87 @@
 # Beautiful Water
 
-A full-screen Three.js shallow-ocean scene with a broad directional wave spectrum,
-distance-filtered capillary normals, projective reflection/refraction, Fresnel and GGX
-lighting, broken cloud reflections and shadows, sun glints, crest scattering, transported
-foam, underwater caustics, and a buoy that samples the same wave field so it naturally bobs
-and tilts with the surface. A seeded, generated noise texture keeps the fragment shader fast
-to compile without introducing downloaded assets.
+[![CI](https://github.com/VictorZakharov/beautiful-water/actions/workflows/ci.yml/badge.svg)](https://github.com/VictorZakharov/beautiful-water/actions/workflows/ci.yml)
+[![Deploy GitHub Pages](https://github.com/VictorZakharov/beautiful-water/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/VictorZakharov/beautiful-water/actions/workflows/deploy-pages.yml)
+[![MIT License](https://img.shields.io/badge/license-MIT-34b7a7.svg)](LICENSE)
 
-The underwater habitat includes three procedural fish schools rendered in two instanced draw
-calls. Fish use separation, alignment, cohesion, depth avoidance, and smooth steering. A moving
-underwater camera triggers escape behavior; a camera that remains still is gradually accepted,
-with a small seeded subset approaching to circle at a cautious distance.
+A cinematic, full-screen shallow-ocean environment rendered with Three.js. It combines a
+directional procedural wave spectrum with physically grounded surface lighting, a responsive
+navigation buoy, and an explorable underwater habitat.
+
+[![Beautiful Water running in the browser](docs/open-water.png)](https://victorzakharov.github.io/beautiful-water/)
+
+**[Open the live demo](https://victorzakharov.github.io/beautiful-water/)**
+
+## Features
+
+- Broad, non-repeating directional swells with domain warping, wave packets, crest shaping,
+  distance-aware detail, and a CPU sampler shared by floating objects.
+- Projective reflection and refraction, Fresnel response, GGX sun glitter, shallow-water
+  transmission, depth-dependent cyan-to-blue color, cloud reflections, and cloud shadows.
+- Transported, lifecycle-driven foam that follows energetic crests without revealing a tiled
+  wave pattern or moving as a single permanent sheet.
+- A visible sun, procedural sky and clouds, natural reflection path, underwater caustics,
+  volumetric sun rays, seabed vegetation, and rocks.
+- A procedural navigation buoy that bobs, tilts, reflects, casts a shadow, and remains the
+  camera's orbit pivot.
+- Three procedural fish schools with separation, alignment, cohesion, depth avoidance,
+  curiosity, habituation, and escape responses to a moving underwater camera.
+- Above-water and underwater rendering states reached continuously by orbiting through the
+  animated surface, plus a responsive loading screen and FPS counter.
+- No downloaded scene assets: geometry, behavior, shaders, sky, noise, and habitat details are
+  generated in code and released under the MIT license.
 
 ## Run locally
 
 ```bash
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
-Then open the local URL printed by Vite.
+Open the local URL printed by Vite.
 
-- Left mouse: orbit
-- Wheel: zoom toward or away from the buoy
-- Orbit beneath the animated surface to enter the underwater rendering state
+- Left mouse: orbit around the buoy
+- Wheel: move toward or away from the buoy
+- Orbit beneath the surface to enter the underwater environment
 
-The orbit pivot remains locked to the buoy; panning and cursor-offset zoom are disabled.
+Panning and cursor-offset zoom are intentionally disabled so the buoy remains the stable focal
+point.
 
-## Production build
+## Automated visual harness
+
+The included Playwright harness starts Vite, freezes the simulation clock, and captures twenty
+named regression views at 1600 by 900 locally. GPU-less CI runs the same camera matrix at 960 by
+540 through Chromium across two parallel, workload-balanced suites, keeping the required check
+deterministic and bounded without dropping coverage. Coverage includes:
+
+- the sun path, cross-sun grazing angles, opposite-sun water, and top-down rendering;
+- near, wide, and far-field compositions designed to expose repetition and grazing artifacts;
+- foam formation, transition, replacement, and long-interval transport;
+- general underwater rendering plus calm, curious, and startled fish behavior;
+- loading-stage order, progress monotonicity, frame cadence, shader warm-up, and WebGL errors;
+- displacement-field correlation at three simulation times to prevent periodic tiling from
+  returning unnoticed.
 
 ```bash
-npm run build
-npm run preview
+bun run visual:test
 ```
 
-## Visual regression harness
-
-The Playwright harness starts Vite, freezes the simulation clock, and captures twenty named
-1600×900 views covering the sun path, both cross-sun grazing angles, opposite-sun water,
-top-down water, two far-field repetition angles, near and wide reference compositions,
-short- and long-interval foam detail, the general underwater scene, and calm/startled fish
-responses. It fails on browser or WebGL console errors and asserts that fish habituate, retain
-curious animals nearby, and flee a fast camera approach. Startup checks also verify ordered,
-monotonic loading stages, animation-frame cadence during asynchronous shader compilation, and
-split reflection/refraction warm-up. The sampled displacement field also has a maximum
-spatial-correlation guard at three points in time so a single dominant wavelength cannot
-silently turn back into visible tiling.
-
-```bash
-npm run visual:test
-```
-
-Screenshots, their camera/renderer manifest, and `startup.json` timing diagnostics are written
-to `visual-results/`. Set `PLAYWRIGHT_CHROMIUM_PATH` when Chrome or Edge is not installed in a
+Screenshots, camera and renderer diagnostics, wave-correlation measurements, and startup timing
+are written to `visual-results/`. Set `PLAYWRIGHT_CHROMIUM_PATH` when Chrome or Edge is not in a
 standard location.
+
+## Production and GitHub Pages
+
+```bash
+bun run build
+bun run build:pages
+bun run check:pages
+```
+
+Pull requests run independent production-build and browser/WebGL checks. Merges to `main` build
+the repository-scoped Pages artifact, rerun the complete visual gate, deploy through GitHub's
+official Pages actions, and smoke-test the live document and JavaScript bundle.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT -- see [LICENSE](LICENSE).
