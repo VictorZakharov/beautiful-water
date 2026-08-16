@@ -95,9 +95,16 @@ export const skyFragmentShader = /* glsl */ `
 
   void main() {
     vec3 direction = normalize(vWorldDirection);
-    vec3 color = atmosphere(direction);
+    vec3 surfaceColor = atmosphere(direction);
+    vec3 deepWater = vec3(0.0015, 0.035, 0.065);
+    vec3 litWater = vec3(0.008, 0.19, 0.24);
+    float upwardLight = smoothstep(-0.72, 0.88, direction.y);
+    vec3 underwaterColor = mix(deepWater, litWater, upwardLight);
 
-    if (uUnderwater < 0.5) {
+    // The medium is a temporal blend while the camera crosses a moving wave.
+    // Shade both endpoints during that short interval instead of swapping the
+    // entire skydome at 50%, which appeared as a solid horizon flash.
+    if (uUnderwater < 0.999) {
       float cloudFade = smoothstep(0.018, 0.12, direction.y) *
         (1.0 - smoothstep(0.84, 0.99, direction.y));
       // Smooth triplanar directional noise has no horizon singularity or
@@ -136,7 +143,7 @@ export const skyFragmentShader = /* glsl */ `
         vec3(0.92, 0.96, 0.98),
         cloudLight
       );
-      color = mix(color, cloudColor, cloud);
+      surfaceColor = mix(surfaceColor, cloudColor, cloud);
 
       // Low-altitude sunlight becomes visible where aerosols scatter it
       // through uneven cloud gaps. Direction-space spokes stay attached
@@ -171,13 +178,11 @@ export const skyFragmentShader = /* glsl */ `
       float cloudGap = mix(1.0, 0.24, cloud);
       float shafts = spokePattern * rayEnvelope * cloudGap
         * (0.035 + cloudEdge * 0.75);
-      color += vec3(1.0, 0.74, 0.46)
+      surfaceColor += vec3(1.0, 0.74, 0.46)
         * shafts * 0.022 * uSunVisibility;
-    } else {
-      float upwardLight = smoothstep(-0.72, 0.88, direction.y);
-      vec3 deepWater = vec3(0.0015, 0.035, 0.065);
-      vec3 litWater = vec3(0.008, 0.19, 0.24);
-      color = mix(deepWater, litWater, upwardLight);
+    }
+
+    if (uUnderwater > 0.001) {
 
       // Refract the solar direction at the air/water boundary. Soft
       // angular density gives volume without intersecting billboard cards.
@@ -208,9 +213,11 @@ export const skyFragmentShader = /* glsl */ `
       float suspendedHaze = fbm(rayUv * 3.2 + uTime * 0.007);
       float shafts = rayCone * mix(0.22, 1.0, rayBands);
       shafts *= 0.42 + suspendedHaze * 0.58;
-      color += vec3(0.025, 0.16, 0.17) * shafts * 0.72;
+      underwaterColor += vec3(0.025, 0.16, 0.17) * shafts * 0.72;
     }
 
+    float mediumBlend = smoothstep(0.0, 1.0, clamp(uUnderwater, 0.0, 1.0));
+    vec3 color = mix(surfaceColor, underwaterColor, mediumBlend);
     float grain = hash21(gl_FragCoord.xy + uTime) - 0.5;
     color += grain / 420.0;
 

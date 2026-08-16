@@ -32,6 +32,13 @@
         <strong data-fps>--</strong>
         <span>FPS</span>
       </output>
+      <div class="renderer-toggle" data-renderer-toggle hidden>
+        <span class="renderer-toggle__status" data-renderer-status></span>
+        <div class="renderer-toggle__buttons" role="group" aria-label="Graphics renderer">
+          <button type="button" data-renderer-mode="webgpu" aria-pressed="false">WebGPU</button>
+          <button type="button" data-renderer-mode="webgl" aria-pressed="false">WebGL</button>
+        </div>
+      </div>
       <div class="loader" role="status" aria-live="polite" aria-label="Loading ocean simulation">
         <div class="loader__visual" aria-hidden="true">
           <span class="loader__sun"></span>
@@ -48,12 +55,12 @@
           <span class="loader__progress-bar"></span>
         </span>
       </div>
-      <noscript>This scene needs JavaScript and WebGL enabled.</noscript>
+      <noscript>This scene needs JavaScript and WebGPU or WebGL 2 enabled.</noscript>
     </main>
     <script type="module">
       const start = () => import('/src/main.js').catch(() => {
         const status = document.querySelector('.loader__status');
-        if (status) status.textContent = 'Unable to start WebGL';
+        if (status) status.textContent = 'Unable to start graphics';
       });
       requestAnimationFrame(() => requestAnimationFrame(start));
     </script>

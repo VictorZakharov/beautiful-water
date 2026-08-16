@@ -2,13 +2,13 @@ const MEGAPIXEL = 1_000_000;
 
 export const GPU_PIXEL_BUDGETS = Object.freeze({
   software: Object.freeze({ minimum: 0.85, initial: 1.45, maximum: 1.85 }),
-  integrated: Object.freeze({ minimum: 1.20, initial: 2.60, maximum: 3.60 }),
+  integrated: Object.freeze({ minimum: 0.85, initial: 2.20, maximum: 3.20 }),
   unknown: Object.freeze({ minimum: 1.50, initial: 4.20, maximum: 6.00 }),
   discrete: Object.freeze({ minimum: 2.00, initial: 6.00, maximum: 8.30 }),
 });
 
 const SOFTWARE_RENDERER = /basic render|llvmpipe|software|swiftshader|warp/i;
-const DISCRETE_RENDERER = /\b(?:geforce|quadro|rtx|gtx|radeon\s+(?:rx|pro)|intel\s+arc)\b/i;
+const DISCRETE_RENDERER = /\b(?:nvidia|geforce|quadro|rtx|gtx|radeon\s+(?:rx|pro)|intel\s+arc)\b/i;
 const INTEGRATED_RENDERER = /\b(?:intel|iris|uhd|hd graphics|vega|radeon\(tm\) graphics|amd radeon graphics|adreno|mali|powervr)\b/i;
 
 function clamp(value, minimum, maximum) {
@@ -31,6 +31,15 @@ export function classifyGpu(rendererName = '', hints = {}) {
 }
 
 export function inspectGpu(renderer, hints = {}) {
+  if (renderer.isWebGPURenderer) {
+    const rendererName = hints.rendererName
+      || (renderer.backend?.isWebGPUBackend ? 'WebGPU adapter' : 'WebGL 2 fallback');
+    return {
+      renderer: rendererName,
+      gpuClass: classifyGpu(rendererName, hints),
+    };
+  }
+
   const context = renderer.getContext();
   const debugInfo = context.getExtension('WEBGL_debug_renderer_info');
   const rendererName = debugInfo
@@ -59,6 +68,7 @@ function qualityTier(renderScale) {
 
 function captureResolutionFor(tier, gpuClass) {
   if (gpuClass === 'software') return 384;
+  if (gpuClass === 'integrated' && tier === 'performance') return 384;
   if (tier === 'performance') return 512;
   if (tier === 'balanced') return 640;
   return 768;

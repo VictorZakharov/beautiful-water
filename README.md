@@ -6,7 +6,8 @@
 
 A cinematic, full-screen shallow-ocean environment rendered with Three.js. It combines a
 directional procedural wave spectrum with physically grounded surface lighting, a responsive
-navigation buoy, and an explorable underwater habitat.
+navigation buoy, and an explorable underwater habitat. WebGPU is the default renderer, with a
+persistent in-scene WebGL toggle and automatic WebGL 2 fallback when native WebGPU is unavailable.
 
 [![Beautiful Water running in the browser](docs/open-water.png)](https://victorzakharov.github.io/beautiful-water/)
 
@@ -30,6 +31,9 @@ navigation buoy, and an explorable underwater habitat.
   animated surface, plus a responsive loading screen and FPS counter.
 - GPU-aware render budgets, high-density antialiasing policy, and frame-time adaptation keep
   4K displays practical without changing the CSS resolution or the default 1080p presentation.
+- Native WebGPU/TSL and legacy WebGL/GLSL water pipelines share the same wave spectrum, scene,
+  controls, simulation clock, and quality controller. Backend-only code is loaded on demand so
+  the compatibility option does not block the initial renderer.
 - No downloaded scene assets: geometry, behavior, shaders, sky, noise, and habitat details are
   generated in code and released under the MIT license.
 
@@ -45,6 +49,7 @@ Open the local URL printed by Vite.
 - Left mouse: orbit around the buoy
 - Wheel: move toward or away from the buoy
 - Orbit beneath the surface to enter the underwater environment
+- Use the upper-right renderer switch to reload in WebGPU or WebGL mode
 
 Panning and cursor-offset zoom are intentionally disabled so the buoy remains the stable focal
 point.
@@ -52,8 +57,10 @@ point.
 ## Automated visual harness
 
 The included Playwright harness starts Vite, freezes the simulation clock, and captures twenty
-named regression views at 1600 by 900 locally. Pull-request CI runs an eight-view representative
-gate at 960 by 540 across two parallel suites; every CI job has a hard two-minute execution cap.
+named regression views at 1600 by 900 locally. It also renders four identical camera/time presets
+through WebGL and WebGPU, writes the individual frames plus labeled side-by-side composites, and
+enforces normalized pixel-error and perceptual-similarity limits. Pull-request CI runs the scene,
+fish, and renderer-parity gates in parallel at 960 by 540; every CI job has a hard two-minute cap.
 The full camera matrix remains available locally, while the required gate samples every major
 rendering and behavior system. Fixed-step fish habituation advances simulation state without
 wasting software-GPU time on intermediate frames. Coverage includes:
@@ -62,20 +69,23 @@ wasting software-GPU time on intermediate frames. Coverage includes:
 - near, wide, and far-field compositions designed to expose repetition and grazing artifacts;
 - foam formation, transition, replacement, and long-interval transport;
 - general underwater rendering plus calm, curious, and startled fish behavior;
-- loading-stage order, progress monotonicity, frame cadence, shader warm-up, and WebGL errors;
+- loading-stage order, progress monotonicity, frame cadence, shader warm-up, and browser errors;
 - 4K framebuffer budgets, integrated/discrete GPU policy, and adaptive quality recovery;
+- WebGPU/WebGL selection, fallback diagnostics, shared wave geometry, and side-by-side parity;
 - displacement-field correlation at three simulation times to prevent periodic tiling from
   returning unnoticed.
 
 ```bash
 bun run visual:test
 bun run quality:test
-# Optional local 4K startup and FPS profile (not used as a hardware-dependent CI gate)
+# Optional side-by-side WebGL/WebGPU 4K startup and FPS profile
+# (not used as a hardware-dependent CI gate)
 bun run performance:profile
 ```
 
-Screenshots, camera and renderer diagnostics, wave-correlation measurements, and startup timing
-are written to `visual-results/`. The optional profile adds `runtime-4k.json`. Set
+Screenshots, side-by-side composites, pixel metrics, camera and renderer diagnostics,
+wave-correlation measurements, and startup timing are written to `visual-results/`. The optional
+profile adds both renderer measurements to `runtime-4k.json`. Set
 `PLAYWRIGHT_CHROMIUM_PATH` when Chrome or Edge is not in a standard location.
 
 ## Production and GitHub Pages
@@ -86,7 +96,7 @@ bun run build:pages
 bun run check:pages
 ```
 
-Pull requests run independent production-build and time-budgeted browser/WebGL checks. Pushes to
+Pull requests run independent production-build and time-budgeted browser renderer checks. Pushes to
 `main` retain the quick production verification but skip the already-passed browser gate. Pages
 then builds the repository-scoped artifact, deploys through GitHub's official actions, and
 smoke-tests the live document and JavaScript bundle without repeating the visual matrix.

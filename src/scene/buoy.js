@@ -2,9 +2,42 @@ import * as THREE from 'three';
 import { seabedHeight } from './environment.js';
 import { sampleOceanSurface } from './waves.js';
 
-function createWake(scene) {
+function createRadialTexture({ shadow = false } = {}) {
+  const size = 256;
+  const textureCanvas = document.createElement('canvas');
+  textureCanvas.width = size;
+  textureCanvas.height = size;
+  const context = textureCanvas.getContext('2d');
+  context.clearRect(0, 0, size, size);
+
+  if (shadow) {
+    const gradient = context.createRadialGradient(128, 128, 4, 128, 128, 118);
+    gradient.addColorStop(0, 'rgba(0,12,18,0.32)');
+    gradient.addColorStop(0.45, 'rgba(0,12,18,0.20)');
+    gradient.addColorStop(1, 'rgba(0,12,18,0)');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, size, size);
+  } else {
+    context.strokeStyle = 'rgba(176,245,235,0.30)';
+    for (const [radius, width, alpha] of [[36, 8, 0.34], [70, 5, 0.20], [108, 3, 0.10]]) {
+      context.globalAlpha = alpha;
+      context.lineWidth = width;
+      context.beginPath();
+      context.ellipse(128, 128, radius, radius * 0.76, 0, 0, Math.PI * 2);
+      context.stroke();
+    }
+    context.globalAlpha = 1;
+  }
+
+  const texture = new THREE.CanvasTexture(textureCanvas);
+  texture.name = shadow ? 'Buoy surface shadow' : 'Buoy wake rings';
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function createWake(scene, rendererMode) {
   const uniforms = { uTime: { value: 0 } };
-  const material = new THREE.ShaderMaterial({
+  const webGlMaterial = new THREE.ShaderMaterial({
     uniforms,
     transparent: true,
     depthWrite: false,
@@ -44,6 +77,15 @@ function createWake(scene) {
       }
     `,
   });
+  const material = rendererMode === 'webgpu'
+    ? new THREE.MeshBasicMaterial({
+      map: createRadialTexture(),
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+      toneMapped: false,
+    })
+    : webGlMaterial;
   const geometry = new THREE.PlaneGeometry(3.2, 3.2, 1, 1);
   geometry.rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geometry, material);
@@ -52,9 +94,9 @@ function createWake(scene) {
   return { mesh, uniforms };
 }
 
-function createSurfaceShadow(scene) {
+function createSurfaceShadow(scene, rendererMode) {
   const uniforms = { uTime: { value: 0 } };
-  const material = new THREE.ShaderMaterial({
+  const webGlMaterial = new THREE.ShaderMaterial({
     uniforms,
     transparent: true,
     depthWrite: false,
@@ -92,6 +134,17 @@ function createSurfaceShadow(scene) {
       }
     `,
   });
+  const material = rendererMode === 'webgpu'
+    ? new THREE.MeshBasicMaterial({
+      map: createRadialTexture({ shadow: true }),
+      color: 0x061820,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      depthTest: true,
+      toneMapped: false,
+    })
+    : webGlMaterial;
   const geometry = new THREE.PlaneGeometry(2.8, 1.35);
   geometry.rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geometry, material);
@@ -100,7 +153,7 @@ function createSurfaceShadow(scene) {
   return { mesh, uniforms };
 }
 
-export function createBuoy(scene, sunDirection) {
+export function createBuoy(scene, sunDirection, { rendererMode = 'webgl' } = {}) {
   const buoy = new THREE.Group();
   const buoyBody = new THREE.Group();
   buoy.add(buoyBody);
@@ -188,8 +241,8 @@ export function createBuoy(scene, sunDirection) {
   mooringLine.castShadow = true;
   scene.add(mooringLine);
 
-  const wake = createWake(scene);
-  const shadow = createSurfaceShadow(scene);
+  const wake = createWake(scene, rendererMode);
+  const shadow = createSurfaceShadow(scene, rendererMode);
   const up = new THREE.Vector3(0, 1, 0);
   const targetBuoyQuaternion = new THREE.Quaternion();
   const targetWakeQuaternion = new THREE.Quaternion();

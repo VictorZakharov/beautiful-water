@@ -1,10 +1,60 @@
 import * as THREE from 'three';
 
+const SEABED_SIZE = 420;
+
 export function seabedHeight(x, z) {
   return -3.55
     + Math.sin(x * 0.105 + z * 0.035) * 0.17
     + Math.sin(z * 0.17 - x * 0.045) * 0.10
     + Math.sin((x + z) * 0.29) * 0.035;
+}
+
+function createSeabedTexture() {
+  const size = 256;
+  const data = new Uint8Array(size * size * 4);
+  let state = 0x57f0c31d;
+  const random = () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 4294967296;
+  };
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const broad = Math.sin(x * 0.071 + y * 0.043)
+        + Math.sin(x * -0.039 + y * 0.097 + 2.3);
+      const grain = random() - 0.5;
+      const causticA = Math.abs(Math.sin(x * 0.105 + Math.sin(y * 0.047) * 2.2));
+      const causticB = Math.abs(Math.sin(y * 0.128 + Math.sin(x * 0.061) * 2.0));
+      const caustic = Math.pow(1 - Math.abs(causticA - causticB), 12);
+      const light = THREE.MathUtils.clamp(
+        0.43 + broad * 0.085 + grain * 0.10 + caustic * 0.34,
+        0,
+        1,
+      );
+      const offset = (y * size + x) * 4;
+      data[offset] = Math.round(38 + light * 58);
+      data[offset + 1] = Math.round(91 + light * 70);
+      data[offset + 2] = Math.round(78 + light * 58);
+      data[offset + 3] = 255;
+    }
+  }
+
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.name = 'Procedural shallow seabed';
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  // Preserve the original 20-world-unit grain scale across the full ocean
+  // footprint so the finite floor cannot reveal a flat backdrop at grazing
+  // underwater angles.
+  texture.repeat.set(SEABED_SIZE / 20, SEABED_SIZE / 20);
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
 }
 
 function createParticleTexture() {
@@ -28,7 +78,7 @@ function createParticleTexture() {
 export function createEnvironment(
   scene,
   sunDirection,
-  { shadowMapResolution = 2048 } = {},
+  { shadowMapResolution = 2048, rendererMode = 'webgl' } = {},
 ) {
   const seabedUniforms = {
     uTime: { value: 0 },
@@ -36,7 +86,7 @@ export function createEnvironment(
     uUnderwater: { value: 0 },
   };
 
-  const seabedMaterial = new THREE.ShaderMaterial({
+  const webGlSeabedMaterial = new THREE.ShaderMaterial({
     uniforms: seabedUniforms,
     vertexShader: /* glsl */ `
       varying vec3 vWorldPosition;
@@ -159,7 +209,24 @@ export function createEnvironment(
     `,
   });
 
-  const seabedGeometry = new THREE.PlaneGeometry(180, 180, 150, 150);
+  const seabedMaterial = rendererMode === 'webgpu'
+    ? new THREE.MeshStandardMaterial({
+      name: 'WebGPU textured seabed',
+      map: createSeabedTexture(),
+      color: 0x9ac3ac,
+      roughness: 0.91,
+      metalness: 0,
+      emissive: 0x0a5451,
+      emissiveIntensity: 0.22,
+    })
+    : webGlSeabedMaterial;
+
+  const seabedGeometry = new THREE.PlaneGeometry(
+    SEABED_SIZE,
+    SEABED_SIZE,
+    150,
+    150,
+  );
   seabedGeometry.rotateX(-Math.PI / 2);
   const seabedPositions = seabedGeometry.attributes.position;
   for (let index = 0; index < seabedPositions.count; index += 1) {
@@ -269,6 +336,13 @@ export function createEnvironment(
   }
   const particleGeometry = new THREE.BufferGeometry();
   particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+  // WebGPU's mapped PointsMaterial validates a UV input even though pointUV
+  // supplies the per-sprite coordinates. A neutral attribute keeps the
+  // pipeline warning-free on both the main and reflection passes.
+  particleGeometry.setAttribute(
+    'uv',
+    new THREE.BufferAttribute(new Float32Array(particleCount * 2).fill(0.5), 2),
+  );
   const particleMaterial = new THREE.PointsMaterial({
     map: createParticleTexture(),
     color: 0x70d9dd,
@@ -291,6 +365,14 @@ export function createEnvironment(
   const sunLight = new THREE.DirectionalLight(0xffe2bc, 3.6);
   sunLight.position.copy(sunDirection).multiplyScalar(36);
   sunLight.castShadow = true;
+  if (rendererMode === 'webgpu') {
+    // WebGPURenderer schedules shadows through each light's ShadowNode. Its
+    // renderer.shadowMap object has no WebGL-style autoUpdate flag, so leaving
+    // the LightShadow at its default would redraw this atlas for both the
+    // reflector camera and the main camera on every frame.
+    sunLight.shadow.autoUpdate = false;
+    sunLight.shadow.needsUpdate = true;
+  }
   let currentShadowMapResolution = shadowMapResolution;
   sunLight.shadow.mapSize.set(shadowMapResolution, shadowMapResolution);
   sunLight.shadow.camera.left = -20;
@@ -304,6 +386,9 @@ export function createEnvironment(
 
   return {
     underwaterObjects: [seabed, rocks, grass],
+    requestShadowUpdate() {
+      if (rendererMode === 'webgpu') sunLight.shadow.needsUpdate = true;
+    },
     setShadowMapResolution(resolution) {
       const nextResolution = Math.max(512, Math.round(resolution));
       if (nextResolution === currentShadowMapResolution) return;
@@ -311,15 +396,28 @@ export function createEnvironment(
       sunLight.shadow.mapSize.set(nextResolution, nextResolution);
       sunLight.shadow.map?.dispose();
       sunLight.shadow.map = null;
+      if (rendererMode === 'webgpu') sunLight.shadow.needsUpdate = true;
     },
     getDiagnostics() {
-      return { shadowMapResolution: currentShadowMapResolution };
+      return {
+        shadowMapResolution: currentShadowMapResolution,
+        shadowAutoUpdate: sunLight.shadow.autoUpdate,
+      };
     },
     update(time, underwaterMix) {
       seabedUniforms.uTime.value = time;
       seabedUniforms.uUnderwater.value = underwaterMix;
-      hemisphereLight.intensity = THREE.MathUtils.lerp(1.65, 0.68, underwaterMix);
-      sunLight.intensity = THREE.MathUtils.lerp(3.6, 0.72, underwaterMix);
+      const underwaterHemisphere = rendererMode === 'webgpu' ? 1.18 : 0.68;
+      const underwaterSun = rendererMode === 'webgpu' ? 1.05 : 0.72;
+      hemisphereLight.intensity = THREE.MathUtils.lerp(
+        1.65,
+        underwaterHemisphere,
+        underwaterMix,
+      );
+      sunLight.intensity = THREE.MathUtils.lerp(3.6, underwaterSun, underwaterMix);
+      if (rendererMode === 'webgpu') {
+        seabedMaterial.emissiveIntensity = THREE.MathUtils.lerp(0.22, 0.96, underwaterMix);
+      }
       particleMaterial.opacity = underwaterMix * 0.46;
       underwaterParticles.visible = underwaterMix > 0.015;
       underwaterParticles.rotation.y = time * 0.0025;

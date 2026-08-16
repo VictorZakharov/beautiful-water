@@ -13,7 +13,7 @@ export function createUnderwaterRays(sunDirection) {
     uAspect: { value: 1 },
   };
 
-  const material = new THREE.ShaderMaterial({
+  const webGlMaterial = new THREE.ShaderMaterial({
     uniforms,
     transparent: true,
     depthTest: false,
@@ -96,6 +96,7 @@ export function createUnderwaterRays(sunDirection) {
       }
     `,
   });
+  const material = webGlMaterial;
 
   const overlayScene = new THREE.Scene();
   const overlayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);

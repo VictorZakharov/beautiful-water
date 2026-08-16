@@ -111,6 +111,70 @@ body {
   letter-spacing: 0.22em;
 }
 
+.renderer-toggle {
+  position: absolute;
+  top: clamp(12px, 2vw, 24px);
+  right: clamp(12px, 2vw, 24px);
+  z-index: 2;
+  padding: 8px;
+  color: rgb(211 236 236 / 64%);
+  background: rgb(3 17 29 / 72%);
+  border: 1px solid rgb(137 224 211 / 15%);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgb(0 8 16 / 18%);
+  backdrop-filter: blur(12px) saturate(120%);
+  opacity: 0;
+  transform: translateY(-5px);
+  transition: opacity 500ms ease 180ms, transform 500ms ease 180ms;
+}
+
+.renderer-toggle[hidden] {
+  display: none;
+}
+
+.is-ready .renderer-toggle {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.renderer-toggle__status {
+  display: block;
+  padding: 1px 5px 7px;
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.renderer-toggle__buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.renderer-toggle button {
+  padding: 6px 9px;
+  color: rgb(220 242 241 / 62%);
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 700;
+  background: rgb(8 31 45 / 82%);
+  border: 1px solid rgb(137 224 211 / 10%);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.renderer-toggle button:hover,
+.renderer-toggle button:focus-visible {
+  color: #e6fffa;
+  border-color: rgb(137 224 211 / 34%);
+}
+
+.renderer-toggle button.is-active {
+  color: #06212b;
+  background: #8edfd4;
+  border-color: transparent;
+}
+
 .is-underwater .fps {
   color: #a9f3e4;
   background: rgb(1 28 34 / 72%);

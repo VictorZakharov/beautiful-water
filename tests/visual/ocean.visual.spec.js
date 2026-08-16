@@ -1,9 +1,14 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
+import { measureNormalizedImageDifference } from './screenshot-metrics.js';
 import { measureWaveFieldCorrelation } from './wave-field.js';
 
-const outputDirectory = path.resolve('visual-results');
+const rendererMode = process.env.RENDERER_MODE ?? 'webgpu';
+if (!['webgpu', 'webgl'].includes(rendererMode)) {
+  throw new Error(`Unknown renderer mode: ${rendererMode}`);
+}
+const outputDirectory = path.resolve('visual-results', rendererMode);
 const fixedTime = 11.75;
 const views = [
   {
@@ -131,6 +136,7 @@ const visualSuites = {
   'ci-scene': views.filter((view) => ciSceneNames.has(view.name)),
   'scene-matrix': views.filter((view) => view.name !== 'underwater-fish-calm'),
   'fish-habituation': views.filter((view) => view.name === 'underwater-fish-calm'),
+  'renderer-parity': [],
 };
 if (!Object.hasOwn(visualSuites, visualSuite)) {
   throw new Error(`Unknown visual suite: ${visualSuite}`);
@@ -138,6 +144,7 @@ if (!Object.hasOwn(visualSuites, visualSuite)) {
 const captureViews = visualSuites[visualSuite];
 const fastCaptureSuite = visualSuite === 'ci-scene';
 const requiredCiSuite = ['ci-scene', 'fish-habituation'].includes(visualSuite);
+const rendererQuery = `renderer=${rendererMode}`;
 
 const fourKTest = ['all', 'scene-matrix'].includes(visualSuite) ? test : test.skip;
 fourKTest('keeps a 4K display inside its adaptive render budget', async ({ page }, testInfo) => {
@@ -150,7 +157,7 @@ fourKTest('keeps a 4K display inside its adaptive render budget', async ({ page 
   });
   page.on('pageerror', (error) => browserErrors.push(`page: ${error.message}`));
 
-  await page.goto('/?harness=1&gpuClass=integrated', {
+  await page.goto(`/?harness=1&gpuClass=integrated&${rendererQuery}`, {
     waitUntil: 'domcontentloaded',
     timeout: 20_000,
   });
@@ -160,7 +167,7 @@ fourKTest('keeps a 4K display inside its adaptive render budget', async ({ page 
     { timeout: 4 * 60_000 },
   );
   await page.addStyleTag({
-    content: '.loader, .fps { display: none !important; }',
+    content: '.loader, .fps, .renderer-toggle { display: none !important; }',
   });
 
   const initial = await page.evaluate(() => window.__WATER_HARNESS__.getDiagnostics());
@@ -176,13 +183,20 @@ fourKTest('keeps a 4K display inside its adaptive render budget', async ({ page 
   ]);
   expect(initial.quality.antialias).toBe(false);
   expect(initial.quality.ocean.captureResolution).toBeLessThanOrEqual(640);
-  expect(initial.quality.ocean.reflectionSize).toEqual(
-    [initial.quality.ocean.captureResolution, initial.quality.ocean.captureResolution],
-  );
-  expect(initial.quality.ocean.refractionSize).toEqual(
-    [initial.quality.ocean.captureResolution, initial.quality.ocean.captureResolution],
-  );
+  if (rendererMode === 'webgl') {
+    expect(initial.quality.ocean.reflectionSize).toEqual(
+      [initial.quality.ocean.captureResolution, initial.quality.ocean.captureResolution],
+    );
+    expect(initial.quality.ocean.refractionSize).toEqual(
+      [initial.quality.ocean.captureResolution, initial.quality.ocean.captureResolution],
+    );
+  } else {
+    expect(initial.quality.ocean.captureStrategy).toBe('reflector-node');
+  }
   expect(initial.quality.environment.shadowMapResolution).toBeLessThanOrEqual(1024);
+  if (rendererMode === 'webgpu') {
+    expect(initial.quality.environment.shadowAutoUpdate).toBe(false);
+  }
 
   const screenshotPath = path.join(outputDirectory, 'adaptive-4k.png');
   await mkdir(outputDirectory, { recursive: true });
@@ -212,7 +226,8 @@ fourKTest('keeps a 4K display inside its adaptive render budget', async ({ page 
   expect(browserErrors, browserErrors.join('\n')).toEqual([]);
 });
 
-test('capture ocean regression views', async ({ page }, testInfo) => {
+const captureTest = visualSuite === 'renderer-parity' ? test.skip : test;
+captureTest('capture ocean regression views', async ({ page }, testInfo) => {
   const waveCorrelations = [0, fixedTime, 29.5].map((time) => ({
     time,
     ...measureWaveFieldCorrelation({ time }),
@@ -272,17 +287,23 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
   });
   page.on('pageerror', (error) => browserErrors.push(`page: ${error.message}`));
 
-  await page.goto('/?harness=1', {
+  await page.goto(`/?harness=1&${rendererQuery}`, {
     waitUntil: 'domcontentloaded',
     timeout: 20_000,
   });
   await page.waitForFunction(
     () => window.__WATER_HARNESS__?.ready === true,
     undefined,
-    { timeout: 20_000 },
+    // Native adapters are usually ready in a few seconds. Windows CI uses
+    // Microsoft WARP, where first-time TSL compilation can exceed 20 seconds.
+    { timeout: 35_000 },
   );
 
   const graphicsRenderer = await page.evaluate(() => {
+    const diagnostics = window.__WATER_HARNESS__.getDiagnostics();
+    if (diagnostics.renderer.backend === 'webgpu') {
+      return diagnostics.renderer.adapter || 'WebGPU adapter';
+    }
     const canvas = document.querySelector('canvas');
     const context = canvas?.getContext('webgl2') ?? canvas?.getContext('webgl');
     if (!context) return 'Unavailable WebGL renderer';
@@ -368,7 +389,7 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
   ).toBeLessThan(loaderFrameGapBudget);
 
   await page.addStyleTag({
-    content: '.loader, .fps { display: none !important; }',
+    content: '.loader, .fps, .renderer-toggle { display: none !important; }',
   });
 
   const manifest = [];
@@ -400,6 +421,8 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
       zoomToCursor: false,
     });
     expect(diagnostics.fish.count, `${view.name} fish count`).toBe(45);
+    expect(diagnostics.renderer.preferred, `${view.name} renderer preference`).toBe(rendererMode);
+    expect(diagnostics.renderer.pipeline, `${view.name} renderer pipeline`).toBe(rendererMode);
     if (view.name === 'underwater-fish-calm') {
       expect(diagnostics.fish.calmness, 'fish habituate to a still camera').toBeGreaterThan(0.75);
       expect(diagnostics.fish.curiousNearby, 'curious fish remain nearby').toBeGreaterThan(0);
@@ -435,5 +458,385 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
     path.join(outputDirectory, 'manifest.json'),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
+  expect(browserErrors, browserErrors.join('\n')).toEqual([]);
+});
+
+const parityTest = visualSuite === 'renderer-parity' ? test : test.skip;
+// The renderer preference has fast unit coverage in CI, while this integration
+// probe remains available locally. Booting a second full software-rendered
+// scene consumed roughly a quarter of the two-minute visual-job budget.
+const fallbackIntegrationTest = visualSuite === 'renderer-parity' && !process.env.CI
+  ? test
+  : test.skip;
+fallbackIntegrationTest('defaults to WebGPU and falls back through the node pipeline', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, 'gpu', {
+      configurable: true,
+      get: () => undefined,
+    });
+  });
+  await page.goto('/?harness=1&gpuClass=integrated', {
+    waitUntil: 'domcontentloaded',
+    timeout: 20_000,
+  });
+  await page.waitForFunction(
+    () => window.__WATER_HARNESS__?.ready === true,
+    undefined,
+    { timeout: 20_000 },
+  );
+  const diagnostics = await page.evaluate(
+    () => window.__WATER_HARNESS__.getDiagnostics(),
+  );
+  expect(diagnostics.renderer.preferred).toBe('webgpu');
+  expect(diagnostics.renderer.pipeline).toBe('webgpu');
+  expect(diagnostics.renderer.backend).toBe('webgl2');
+  expect(diagnostics.renderer.fallbackReason).toContain('WebGPU unavailable');
+});
+
+parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) => {
+  testInfo.setTimeout(80_000);
+  const parityDirectory = path.resolve('visual-results', 'parity');
+  const parityViews = views.filter(({ name }) => [
+    'sun-facing-low',
+    'reference-medium',
+    'top-down',
+    'underwater',
+  ].includes(name));
+  const captures = new Map();
+  const transitionCaptures = new Map();
+  const diagnosticsByMode = {};
+  const browserErrors = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(`console: ${message.text()}`);
+  });
+  page.on('pageerror', (error) => browserErrors.push(`page: ${error.message}`));
+
+  await mkdir(parityDirectory, { recursive: true });
+  for (const mode of ['webgl', 'webgpu']) {
+    await page.goto(`/?harness=1&gpuClass=discrete&renderer=${mode}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 20_000,
+    });
+    await page.waitForFunction(
+      () => window.__WATER_HARNESS__?.ready === true,
+      undefined,
+      { timeout: 20_000 },
+    );
+    await page.addStyleTag({
+      content: '.loader, .fps, .renderer-toggle { display: none !important; }',
+    });
+
+    diagnosticsByMode[mode] = await page.evaluate(
+      () => window.__WATER_HARNESS__.getDiagnostics(),
+    );
+    expect(diagnosticsByMode[mode].renderer.pipeline).toBe(mode);
+    for (const view of parityViews) {
+      const captureTime = view.time ?? fixedTime;
+      await page.evaluate(
+        (preset) => window.__WATER_HARNESS__.setView(preset),
+        { ...view, time: captureTime, renderPasses: 2 },
+      );
+      const screenshot = await page.screenshot({
+        animations: 'disabled',
+        fullPage: false,
+      });
+      captures.set(`${mode}:${view.name}`, screenshot);
+      await writeFile(
+        path.join(parityDirectory, `${view.name}-${mode}.png`),
+        screenshot,
+      );
+    }
+
+    for (const underwaterBlend of [0.49, 0.51]) {
+      const diagnostics = await page.evaluate(
+        (preset) => window.__WATER_HARNESS__.setView(preset),
+        {
+          position: [8.4, -0.14, 11.7],
+          target: [0, -0.14, 0],
+          time: fixedTime,
+          renderPasses: 1,
+          underwaterBlend,
+        },
+      );
+      expect(diagnostics.underwaterMix).toBeCloseTo(underwaterBlend, 5);
+      const screenshot = await page.screenshot({
+        animations: 'disabled',
+        fullPage: false,
+      });
+      const key = `${mode}:${underwaterBlend.toFixed(2)}`;
+      transitionCaptures.set(key, screenshot);
+      const transitionPath = path.join(
+        parityDirectory,
+        `waterline-transition-${underwaterBlend.toFixed(2)}-${mode}.png`,
+      );
+      await writeFile(transitionPath, screenshot);
+      await testInfo.attach(`${mode} waterline ${underwaterBlend.toFixed(2)}`, {
+        path: transitionPath,
+        contentType: 'image/png',
+      });
+    }
+  }
+
+  const transitionMetrics = {};
+  for (const mode of ['webgl', 'webgpu']) {
+    const crossing = await measureNormalizedImageDifference(
+      page,
+      transitionCaptures.get(`${mode}:0.49`),
+      transitionCaptures.get(`${mode}:0.51`),
+    );
+    transitionMetrics[mode] = { crossing };
+    expect(
+      crossing,
+      `${mode} crosses the waterline without a frame-sized visual discontinuity`,
+    ).toBeLessThan(0.045);
+  }
+
+  const metrics = [];
+  for (const view of parityViews) {
+    const webGl = captures.get(`webgl:${view.name}`).toString('base64');
+    const webGpu = captures.get(`webgpu:${view.name}`).toString('base64');
+    const comparison = await page.evaluate(async ({ webGlBase64, webGpuBase64, name }) => {
+      const loadImage = (source) => new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = source;
+      });
+      const [left, right] = await Promise.all([
+        loadImage(`data:image/png;base64,${webGlBase64}`),
+        loadImage(`data:image/png;base64,${webGpuBase64}`),
+      ]);
+      const width = left.naturalWidth;
+      const height = left.naturalHeight;
+      const sampleCanvas = document.createElement('canvas');
+      sampleCanvas.width = width;
+      sampleCanvas.height = height;
+      const sampleContext = sampleCanvas.getContext('2d', { willReadFrequently: true });
+      sampleContext.drawImage(left, 0, 0);
+      const leftPixels = sampleContext.getImageData(0, 0, width, height).data;
+      sampleContext.clearRect(0, 0, width, height);
+      sampleContext.drawImage(right, 0, 0);
+      const rightPixels = sampleContext.getImageData(0, 0, width, height).data;
+
+      const measureSunPath = (pixels) => {
+        if (!['sun-facing-low', 'reference-medium'].includes(name)) return null;
+        const luminanceAt = (x, y) => {
+          const offset = (y * width + x) * 4;
+          return pixels[offset] * 0.2126
+            + pixels[offset + 1] * 0.7152
+            + pixels[offset + 2] * 0.0722;
+        };
+        const startY = Math.floor(height * 0.31);
+        const endY = Math.floor(height * 0.72);
+        const centerStart = Math.floor(width * 0.44);
+        const centerEnd = Math.floor(width * 0.56);
+        const sideRanges = [
+          [Math.floor(width * 0.25), Math.floor(width * 0.37)],
+          [Math.floor(width * 0.63), Math.floor(width * 0.75)],
+        ];
+        let contrastSum = 0;
+        let highlighted = 0;
+        let samples = 0;
+        const positiveContrasts = [];
+        for (let y = startY; y < endY; y += 3) {
+          let sideLuminance = 0;
+          let sideSamples = 0;
+          for (const [startX, endX] of sideRanges) {
+            for (let x = startX; x < endX; x += 3) {
+              sideLuminance += luminanceAt(x, y);
+              sideSamples += 1;
+            }
+          }
+          const rowBaseline = sideLuminance / sideSamples;
+          for (let x = centerStart; x < centerEnd; x += 3) {
+            const contrast = Math.max(luminanceAt(x, y) - rowBaseline, 0);
+            contrastSum += contrast;
+            positiveContrasts.push(contrast);
+            if (contrast > 15) highlighted += 1;
+            samples += 1;
+          }
+        }
+        positiveContrasts.sort((a, b) => a - b);
+        return {
+          meanContrast: contrastSum / samples / 255,
+          highlightCoverage: highlighted / samples,
+          upperDecileContrast: positiveContrasts[
+            Math.floor(positiveContrasts.length * 0.9)
+          ] / 255,
+        };
+      };
+      const webGlSunPath = measureSunPath(leftPixels);
+      const webGpuSunPath = measureSunPath(rightPixels);
+
+      const measureSkyDetail = (pixels) => {
+        if (!['sun-facing-low', 'reference-medium'].includes(name)) return null;
+        const luminanceAt = (x, y) => {
+          const offset = (y * width + x) * 4;
+          return pixels[offset] * 0.2126
+            + pixels[offset + 1] * 0.7152
+            + pixels[offset + 2] * 0.0722;
+        };
+        const startX = Math.floor(width * 0.03);
+        const endX = Math.floor(width * 0.97);
+        const startY = Math.floor(height * 0.03);
+        const endY = Math.floor(height * 0.36);
+        let detailSum = 0;
+        let detailedPixels = 0;
+        let samples = 0;
+        for (let y = startY + 2; y < endY - 2; y += 2) {
+          for (let x = startX + 2; x < endX - 2; x += 2) {
+            const center = luminanceAt(x, y);
+            const neighborMean = (
+              luminanceAt(x - 2, y)
+              + luminanceAt(x + 2, y)
+              + luminanceAt(x, y - 2)
+              + luminanceAt(x, y + 2)
+            ) * 0.25;
+            const detail = Math.abs(center - neighborMean);
+            detailSum += detail;
+            if (detail > 2.0) detailedPixels += 1;
+            samples += 1;
+          }
+        }
+        return {
+          meanLaplacian: detailSum / samples / 255,
+          edgeCoverage: detailedPixels / samples,
+        };
+      };
+      const webGlSkyDetail = measureSkyDetail(leftPixels);
+      const webGpuSkyDetail = measureSkyDetail(rightPixels);
+
+      let absoluteError = 0;
+      let luminanceError = 0;
+      let similarPixels = 0;
+      const pixelCount = width * height;
+      for (let offset = 0; offset < leftPixels.length; offset += 4) {
+        const red = Math.abs(leftPixels[offset] - rightPixels[offset]);
+        const green = Math.abs(leftPixels[offset + 1] - rightPixels[offset + 1]);
+        const blue = Math.abs(leftPixels[offset + 2] - rightPixels[offset + 2]);
+        absoluteError += (red + green + blue) / 3;
+        luminanceError += Math.abs(
+          leftPixels[offset] * 0.2126
+          + leftPixels[offset + 1] * 0.7152
+          + leftPixels[offset + 2] * 0.0722
+          - rightPixels[offset] * 0.2126
+          - rightPixels[offset + 1] * 0.7152
+          - rightPixels[offset + 2] * 0.0722,
+        );
+        if (Math.max(red, green, blue) <= 32) similarPixels += 1;
+      }
+
+      const labelHeight = 38;
+      const outputCanvas = document.createElement('canvas');
+      outputCanvas.width = width * 2;
+      outputCanvas.height = height + labelHeight;
+      const output = outputCanvas.getContext('2d');
+      output.fillStyle = '#061923';
+      output.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+      output.drawImage(left, 0, labelHeight);
+      output.drawImage(right, width, labelHeight);
+      output.fillStyle = '#b8f3e4';
+      output.font = '600 18px system-ui, sans-serif';
+      output.fillText(`WebGL reference - ${name}`, 14, 25);
+      const normalizedError = absoluteError / pixelCount / 255;
+      output.fillText(
+        `WebGPU candidate - MAE ${(normalizedError * 100).toFixed(2)}%`,
+        width + 14,
+        25,
+      );
+      if (webGlSunPath && webGpuSunPath) {
+        output.font = '500 13px system-ui, sans-serif';
+        output.fillText(
+          `sun-path contrast ${(webGpuSunPath.meanContrast * 100).toFixed(2)}%`
+            + ` (WebGL ${(webGlSunPath.meanContrast * 100).toFixed(2)}%)`,
+          width + 350,
+          25,
+        );
+      }
+      output.fillStyle = '#62d8c7';
+      output.fillRect(width - 1, 0, 2, outputCanvas.height);
+
+      return {
+        image: outputCanvas.toDataURL('image/png').split(',')[1],
+        meanAbsoluteError: normalizedError,
+        meanLuminanceError: luminanceError / pixelCount / 255,
+        similarPixelRatio: similarPixels / pixelCount,
+        sunPath: webGlSunPath && webGpuSunPath
+          ? { webgl: webGlSunPath, webgpu: webGpuSunPath }
+          : null,
+        skyDetail: webGlSkyDetail && webGpuSkyDetail
+          ? { webgl: webGlSkyDetail, webgpu: webGpuSkyDetail }
+          : null,
+      };
+    }, { webGlBase64: webGl, webGpuBase64: webGpu, name: view.name });
+
+    const comparisonPath = path.join(parityDirectory, `${view.name}-comparison.png`);
+    await writeFile(comparisonPath, Buffer.from(comparison.image, 'base64'));
+    await testInfo.attach(`${view.name} renderer parity`, {
+      path: comparisonPath,
+      contentType: 'image/png',
+    });
+    metrics.push({
+      view: view.name,
+      meanAbsoluteError: comparison.meanAbsoluteError,
+      meanLuminanceError: comparison.meanLuminanceError,
+      similarPixelRatio: comparison.similarPixelRatio,
+      sunPath: comparison.sunPath,
+      skyDetail: comparison.skyDetail,
+    });
+  }
+
+  await writeFile(
+    path.join(parityDirectory, 'metrics.json'),
+    `${JSON.stringify({ diagnosticsByMode, metrics, transitionMetrics }, null, 2)}\n`,
+  );
+  const meanAbsoluteError = metrics.reduce(
+    (sum, metric) => sum + metric.meanAbsoluteError,
+    0,
+  ) / metrics.length;
+  const meanSimilarPixelRatio = metrics.reduce(
+    (sum, metric) => sum + metric.similarPixelRatio,
+    0,
+  ) / metrics.length;
+  expect(
+    meanAbsoluteError,
+    'average WebGPU/WebGL normalized pixel error',
+  ).toBeLessThan(0.065);
+  expect(
+    Math.max(...metrics.map(({ meanAbsoluteError: error }) => error)),
+    'no individual parity view may diverge substantially',
+  ).toBeLessThan(0.085);
+  expect(
+    meanSimilarPixelRatio,
+    'most pixels should remain within 32 RGB levels of the WebGL reference',
+  ).toBeGreaterThan(0.72);
+  expect(
+    Math.min(...metrics.map(({ similarPixelRatio }) => similarPixelRatio)),
+    'every parity view retains a majority of perceptually similar pixels',
+  ).toBeGreaterThan(0.62);
+  for (const metric of metrics.filter(({ sunPath }) => sunPath)) {
+    expect(
+      metric.sunPath.webgpu.meanContrast,
+      `${metric.view} keeps at least 70% of the WebGL sun-path contrast`,
+    ).toBeGreaterThan(metric.sunPath.webgl.meanContrast * 0.70);
+    expect(
+      metric.sunPath.webgpu.highlightCoverage,
+      `${metric.view} keeps at least 60% of the WebGL sun-path coverage`,
+    ).toBeGreaterThan(metric.sunPath.webgl.highlightCoverage * 0.60);
+    expect(
+      metric.sunPath.webgpu.upperDecileContrast,
+      `${metric.view} keeps at least 70% of the resolved WebGL glint intensity`,
+    ).toBeGreaterThan(metric.sunPath.webgl.upperDecileContrast * 0.70);
+  }
+  for (const metric of metrics.filter(({ skyDetail }) => skyDetail)) {
+    expect(
+      metric.skyDetail.webgpu.meanLaplacian,
+      `${metric.view} WebGPU sky retains resolved cloud edges`,
+    ).toBeGreaterThan(metric.skyDetail.webgl.meanLaplacian * 0.65);
+    expect(
+      metric.skyDetail.webgpu.edgeCoverage,
+      `${metric.view} WebGPU sky does not collapse into broad blurred blobs`,
+    ).toBeGreaterThan(metric.skyDetail.webgl.edgeCoverage * 0.65);
+  }
   expect(browserErrors, browserErrors.join('\n')).toEqual([]);
 });

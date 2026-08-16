@@ -9,6 +9,7 @@ describe('GPU classification', () => {
   test('recognizes common integrated, discrete, and software renderers', () => {
     expect(classifyGpu('ANGLE (Intel, Intel(R) UHD Graphics 630)')).toBe('integrated');
     expect(classifyGpu('ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Ti)')).toBe('discrete');
+    expect(classifyGpu('nvidia lovelace')).toBe('discrete');
     expect(classifyGpu('ANGLE (Microsoft, Microsoft Basic Render Driver)')).toBe('software');
   });
 });
@@ -37,7 +38,7 @@ describe('high-density framebuffer policy', () => {
 });
 
 describe('adaptive pixel budget', () => {
-  test('starts an integrated GPU near 2.6 MP at either 4K display scale', () => {
+  test('starts an integrated GPU near 2.2 MP at either 4K display scale', () => {
     const native4k = createAdaptiveQuality({
       width: 3840,
       height: 2160,
@@ -51,12 +52,12 @@ describe('adaptive pixel budget', () => {
       gpuClass: 'integrated',
     }).getState();
 
-    expect(native4k.renderPixels).toBeLessThanOrEqual(2_602_500);
-    expect(native4k.renderPixels).toBeGreaterThanOrEqual(2_595_000);
-    expect(scaled4k.renderPixels).toBeLessThanOrEqual(2_602_500);
-    expect(scaled4k.renderPixels).toBeGreaterThanOrEqual(2_595_000);
+    expect(native4k.renderPixels).toBeLessThanOrEqual(2_202_500);
+    expect(native4k.renderPixels).toBeGreaterThanOrEqual(2_195_000);
+    expect(scaled4k.renderPixels).toBeLessThanOrEqual(2_202_500);
+    expect(scaled4k.renderPixels).toBeGreaterThanOrEqual(2_195_000);
     expect(native4k.tier).toBe('performance');
-    expect(native4k.captureResolution).toBe(512);
+    expect(native4k.captureResolution).toBe(384);
   });
 
   test('leaves a standard-density 1080p canvas at native resolution', () => {
@@ -100,6 +101,7 @@ describe('adaptive pixel budget', () => {
     expect(reduced.pixelBudget).toBeLessThan(initial.pixelBudget);
     expect(reduced.renderPixels).toBeLessThan(initial.renderPixels);
     expect(reduced.pixelBudget).toBe(reduced.minimumPixelBudget);
+    expect(reduced.pixelBudget).toBe(850_000);
 
     for (let sample = 0; sample < 12; sample += 1) controller.sampleFrameRate(60);
     const recovering = controller.getState();
