@@ -21,7 +21,14 @@ developed in **two days of intensive human-AI collaboration**. That unusually sh
 window makes the repository useful both as a pretty public graphics demo and as a transparent
 calibration case for software-effort estimation.
 
-EffortHours estimates that the finished repository represents 161.5 equivalent human-hours,
+[EffortHours](https://github.com/VictorZakharov/efforthours) is an evidence-first, offline .NET CLI.
+It uses static analysis to turn source, tests, documentation, configuration, and delivery
+artifacts into traceable **Equivalent Human Effort (EHE)**. EHE asks how long one competent senior
+contractor, unfamiliar with the domain and not using AI, would need to recreate the current
+functional and quality state from a clear specification. It is not a timesheet, productivity
+score, or authorship detector.
+
+Its analysis estimates that this finished repository represents 161.5 equivalent human-hours,
 with a preliminary range of 78–306.75 hours. A separate manual code review estimates 240 hours,
 with a clean-recreation range of 182–302 hours. These figures describe counterfactual human
 replacement effort, not elapsed development time or a claim that two days contained that many
