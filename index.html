@@ -19,8 +19,9 @@
       .loader { position: fixed; inset: 0; z-index: 100; background: #04131f; }
     </style>
     <title>Open Water</title>
-    <script type="module" crossorigin src="/beautiful-water/assets/index-CMobSaLs.js"></script>
-    <link rel="stylesheet" crossorigin href="/beautiful-water/assets/index-HhTQ-63j.css">
+    <script type="module" crossorigin src="/beautiful-water/assets/index-d0pUNhz5.js"></script>
+    <link rel="modulepreload" crossorigin href="/beautiful-water/assets/preload-helper-Djf8UFJF.js">
+    <link rel="stylesheet" crossorigin href="/beautiful-water/assets/index-LwGtNmHo.css">
   </head>
   <body>
     <main id="app">
@@ -33,6 +34,13 @@
         <strong data-fps>--</strong>
         <span>FPS</span>
       </output>
+      <div class="renderer-toggle" data-renderer-toggle hidden>
+        <span class="renderer-toggle__status" data-renderer-status></span>
+        <div class="renderer-toggle__buttons" role="group" aria-label="Graphics renderer">
+          <button type="button" data-renderer-mode="webgpu" aria-pressed="false">WebGPU</button>
+          <button type="button" data-renderer-mode="webgl" aria-pressed="false">WebGL</button>
+        </div>
+      </div>
       <div class="loader" role="status" aria-live="polite" aria-label="Loading ocean simulation">
         <div class="loader__visual" aria-hidden="true">
           <span class="loader__sun"></span>
@@ -49,7 +57,7 @@
           <span class="loader__progress-bar"></span>
         </span>
       </div>
-      <noscript>This scene needs JavaScript and WebGL enabled.</noscript>
+      <noscript>This scene needs JavaScript and WebGPU or WebGL 2 enabled.</noscript>
     </main>
   </body>
 </html>
