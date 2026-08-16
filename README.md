@@ -9,9 +9,29 @@ directional procedural wave spectrum with physically grounded surface lighting, 
 navigation buoy, and an explorable underwater habitat. WebGPU is the default renderer, with a
 persistent in-scene WebGL toggle and automatic WebGL 2 fallback when native WebGPU is unavailable.
 
-[![Beautiful Water running in the browser](docs/open-water.png)](https://victorzakharov.github.io/beautiful-water/)
+[![Beautiful Water running in the browser](docs/open-water.jpg)](https://victorzakharov.github.io/beautiful-water/)
 
 **[Open the live demo](https://victorzakharov.github.io/beautiful-water/)**
+
+## A two-day build and effort-estimation case study
+
+The complete project—from the initial water prototype through dual WebGPU/WebGL renderers,
+underwater behavior, automated visual regression, performance adaptation, and publishing—was
+developed in **two days of intensive human-AI collaboration**. That unusually short delivery
+window makes the repository useful both as a pretty public graphics demo and as a transparent
+calibration case for software-effort estimation.
+
+EffortHours estimates that the finished repository represents 161.5 equivalent human-hours,
+with a preliminary range of 78–306.75 hours. A separate manual code review estimates 240 hours,
+with a clean-recreation range of 182–302 hours. These figures describe counterfactual human
+replacement effort, not elapsed development time or a claim that two days contained that many
+labor hours.
+
+- [Complete EffortHours report](docs/effort-hours-report.md)
+- [Detailed manual effort review](docs/effort-hours-manual-review.md)
+
+Both reports are committed with the source so this project can serve as a reproducible case for
+refining the `eh` estimator while the live demo remains available for direct visual inspection.
 
 ## Features
 
