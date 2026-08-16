@@ -25,14 +25,17 @@ calibration case for software-effort estimation.
 It uses static analysis to turn source, tests, documentation, configuration, and delivery
 artifacts into traceable **Equivalent Human Effort (EHE)**. EHE asks how long one competent senior
 contractor, unfamiliar with the domain and not using AI, would need to recreate the current
-functional and quality state from a clear specification. It is not a timesheet, productivity
-score, or authorship detector.
+functional and quality state from a clear specification. EffortHours does not infer productivity
+from a repository alone and is not an authorship detector. When EHE is paired with independently
+measured delivery effort, however, it can support a derived productivity comparison.
 
 Its analysis estimates that this finished repository represents 161.5 equivalent human-hours,
 with a preliminary range of 78–306.75 hours. A separate manual code review estimates 240 hours,
-with a clean-recreation range of 182–302 hours. These figures describe counterfactual human
-replacement effort, not elapsed development time or a claim that two days contained that many
-labor hours.
+with a clean-recreation range of 182–302 hours. Pairing those expected values with the observed
+two-day delivery window compares roughly four to six conventional full-time weeks of represented
+output with two days of AI-assisted delivery. That demonstrates striking productivity
+amplification, but it is not a precise individual productivity score: calculating an exact
+multiplier would require separately logged active human hours.
 
 - [Complete EffortHours report](docs/effort-hours-report.md)
 - [Detailed manual effort review](docs/effort-hours-manual-review.md)
