@@ -293,7 +293,9 @@ captureTest('capture ocean regression views', async ({ page }, testInfo) => {
   await page.waitForFunction(
     () => window.__WATER_HARNESS__?.ready === true,
     undefined,
-    { timeout: 20_000 },
+    // Native adapters are usually ready in a few seconds. Windows CI uses
+    // Microsoft WARP, where first-time TSL compilation can exceed 20 seconds.
+    { timeout: 35_000 },
   );
 
   const graphicsRenderer = await page.evaluate(() => {

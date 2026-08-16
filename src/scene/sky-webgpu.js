@@ -194,18 +194,21 @@ function createCloudDeck() {
 export function createWebGpuSky(scene, sunDirection) {
   const skyMaterial = new THREE.MeshBasicMaterial({
     map: createSkyTexture(),
-    side: THREE.BackSide,
+    side: THREE.FrontSide,
     depthWrite: false,
-    depthTest: true,
+    depthTest: false,
     fog: false,
     toneMapped: false,
   });
-  const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(390, 48, 24),
-    skyMaterial,
-  );
+  // Microsoft WARP can cull BackSide node materials inconsistently. Invert
+  // the sphere once and render ordinary front faces so native adapters and
+  // software WebGPU execute the same portable rasterization path.
+  const skyGeometry = new THREE.SphereGeometry(390, 48, 24);
+  skyGeometry.scale(-1, 1, 1);
+  const sky = new THREE.Mesh(skyGeometry, skyMaterial);
   sky.name = 'WebGPU atmospheric sky';
   sky.renderOrder = -10;
+  sky.frustumCulled = false;
   scene.add(sky);
   const clouds = createCloudDeck();
   scene.add(clouds);
