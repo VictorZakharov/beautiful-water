@@ -4,7 +4,15 @@ import { Refractor } from 'three/addons/objects/Refractor.js';
 import { waterFragmentShader, waterVertexShader } from '../shaders/water.js';
 import { createNoiseTexture } from './noise-texture.js';
 
-export function createOcean({ renderer, scene, camera, sunDirection, sky, sun }) {
+export function createOcean({
+  renderer,
+  scene,
+  camera,
+  sunDirection,
+  sky,
+  sun,
+  captureResolution = window.innerWidth < 720 ? 512 : 768,
+}) {
   const noiseTexture = createNoiseTexture();
   const uniforms = {
     uTime: { value: 0 },
@@ -46,7 +54,6 @@ export function createOcean({ renderer, scene, camera, sunDirection, sky, sun })
   mesh.renderOrder = 5;
   scene.add(mesh);
 
-  const captureResolution = window.innerWidth < 720 ? 512 : 768;
   const captureGeometry = new THREE.PlaneGeometry(420, 420);
   const reflector = new Reflector(captureGeometry, {
     textureWidth: captureResolution,
@@ -72,6 +79,7 @@ export function createOcean({ renderer, scene, camera, sunDirection, sky, sun })
 
   const reflectionCaptureInverse = new THREE.Matrix4();
   const refractionCaptureInverse = new THREE.Matrix4();
+  let currentCaptureResolution = captureResolution;
 
   function updateReflectionTextureMatrix() {
     reflectionCaptureInverse.copy(reflector.matrixWorld).invert();
@@ -168,6 +176,22 @@ export function createOcean({ renderer, scene, camera, sunDirection, sky, sun })
     renderReflectionCapture,
     renderRefractionCapture,
     renderCaptures,
+    setCaptureResolution(resolution) {
+      const nextResolution = Math.max(256, Math.round(resolution));
+      if (nextResolution === currentCaptureResolution) return;
+      currentCaptureResolution = nextResolution;
+      reflector.getRenderTarget().setSize(nextResolution, nextResolution);
+      refractor.getRenderTarget().setSize(nextResolution, nextResolution);
+    },
+    getDiagnostics() {
+      const reflectionTarget = reflector.getRenderTarget();
+      const refractionTarget = refractor.getRenderTarget();
+      return {
+        captureResolution: currentCaptureResolution,
+        reflectionSize: [reflectionTarget.width, reflectionTarget.height],
+        refractionSize: [refractionTarget.width, refractionTarget.height],
+      };
+    },
     update(time, underwaterMix) {
       uniforms.uTime.value = time;
       uniforms.uUnderwater.value = underwaterMix;

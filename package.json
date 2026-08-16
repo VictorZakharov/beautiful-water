@@ -27,6 +27,8 @@
     "build": "vite build",
     "build:pages": "vite build --base=/beautiful-water/",
     "check:pages": "bun scripts/check-pages-build.mjs",
+    "quality:test": "bun test tests/performance",
+    "performance:profile": "PERFORMANCE_PROFILE=1 playwright test --config=playwright.config.js --grep \"profile live 4K runtime\"",
     "preview": "vite preview --host 0.0.0.0",
     "visual:test": "playwright test --config=playwright.config.js"
   },

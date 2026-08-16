@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import {
+  createAdaptiveQuality,
+  inspectGpu,
+  shouldUseAntialias,
+} from './core/adaptive-quality.js';
 import { createBuoy } from './scene/buoy.js';
 import { createEnvironment, seabedHeight } from './scene/environment.js';
 import { createFishSchools } from './scene/fish.js';
@@ -12,13 +17,20 @@ import { createLoadingController } from './ui/loading.js';
 const canvas = document.querySelector('#ocean-canvas');
 const app = document.querySelector('#app');
 const fpsValue = document.querySelector('[data-fps]');
-const harnessMode = new URLSearchParams(window.location.search).has('harness');
+const query = new URLSearchParams(window.location.search);
+const harnessMode = query.has('harness');
 const loading = createLoadingController(app);
 loading.setStage(0.10, 'Building ocean surface');
 
+const antialias = shouldUseAntialias({
+  width: window.innerWidth,
+  height: window.innerHeight,
+  devicePixelRatio: window.devicePixelRatio,
+});
+
 const renderer = new THREE.WebGLRenderer({
   canvas,
-  antialias: true,
+  antialias,
   alpha: false,
   powerPreference: 'high-performance',
 });
@@ -27,6 +39,27 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.90;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
+// Keep shadow refreshes on an explicit cadence so the capture and main passes
+// reuse one atlas; the performance tier can safely refresh it every other frame.
+renderer.shadowMap.autoUpdate = false;
+
+const gpu = inspectGpu(renderer, {
+  deviceMemory: navigator.deviceMemory,
+  hardwareConcurrency: navigator.hardwareConcurrency,
+});
+const harnessGpuClass = query.get('gpuClass');
+const gpuClass = harnessMode
+  && ['software', 'integrated', 'unknown', 'discrete'].includes(harnessGpuClass)
+  ? harnessGpuClass
+  : gpu.gpuClass;
+const adaptiveQuality = createAdaptiveQuality({
+  width: window.innerWidth,
+  height: window.innerHeight,
+  devicePixelRatio: window.devicePixelRatio,
+  gpuClass,
+  rendererName: gpu.renderer,
+});
+const initialQuality = adaptiveQuality.getState();
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x063c48, 0.00001);
@@ -59,8 +92,11 @@ const ocean = createOcean({
   sunDirection,
   sky,
   sun: sky.sun,
+  captureResolution: initialQuality.captureResolution,
 });
-const environment = createEnvironment(scene, sunDirection);
+const environment = createEnvironment(scene, sunDirection, {
+  shadowMapResolution: initialQuality.shadowMapResolution,
+});
 const fishSchools = createFishSchools(scene);
 const buoy = createBuoy(scene, sunDirection);
 const underwaterRays = createUnderwaterRays(sunDirection);
@@ -75,19 +111,31 @@ const motionScale = reducedMotion ? 0.35 : 1;
 const timer = new THREE.Timer().setTimescale(motionScale);
 timer.connect(document);
 
-function resize() {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  const mobileRatio = width < 720 ? 1.35 : 1.7;
-
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobileRatio));
-  renderer.setSize(width, height, false);
-  underwaterRays.resize(width, height);
-  camera.aspect = width / height;
+function applyRenderQuality() {
+  const quality = adaptiveQuality.getState();
+  renderer.setPixelRatio(quality.pixelRatio);
+  renderer.setSize(quality.width, quality.height, false);
+  ocean.setCaptureResolution(quality.captureResolution);
+  environment.setShadowMapResolution(quality.shadowMapResolution);
+  renderer.shadowMap.needsUpdate = true;
+  underwaterRays.resize(quality.width, quality.height);
+  camera.aspect = quality.width / quality.height;
   camera.updateProjectionMatrix();
 }
 
+function resize() {
+  adaptiveQuality.resize(
+    window.innerWidth,
+    window.innerHeight,
+    window.devicePixelRatio,
+  );
+  applyRenderQuality();
+}
+
 window.addEventListener('resize', resize, { passive: true });
+document.addEventListener('visibilitychange', () => {
+  adaptiveQuality.resetFrameSampling();
+});
 resize();
 
 let underwaterMix = 0;
@@ -97,6 +145,7 @@ let smoothedFps = 60;
 let harnessTime = 11.75;
 let lastFrameDiagnostics = { drawCalls: 0, triangles: 0 };
 let cameraIsUnderwater = false;
+let renderedFrames = 0;
 
 function updateFrameState(elapsed) {
   if (!harnessMode) {
@@ -161,9 +210,14 @@ function renderScene() {
 }
 
 function renderFrame(elapsed) {
+  const quality = adaptiveQuality.getState();
+  if (renderedFrames % quality.shadowFrameInterval === 0) {
+    renderer.shadowMap.needsUpdate = true;
+  }
   updateFrameState(elapsed);
   renderOceanCaptures();
   renderScene();
+  renderedFrames += 1;
 }
 
 function updateFps() {
@@ -188,6 +242,7 @@ async function start() {
   const initialTime = harnessMode ? harnessTime : 0;
   updateFrameState(initialTime);
   await loading.paint(0.70, 'Warming reflection');
+  renderer.shadowMap.needsUpdate = true;
   renderOceanCaptures('reflection');
   await loading.paint(0.82, 'Warming refraction');
   renderOceanCaptures('refraction');
@@ -209,6 +264,7 @@ async function start() {
       return this.getDiagnostics();
     },
     getDiagnostics() {
+      const quality = adaptiveQuality.getState();
       return {
         camera: camera.position.toArray(),
         target: controls.target.toArray(),
@@ -216,6 +272,13 @@ async function start() {
         drawCalls: lastFrameDiagnostics.drawCalls,
         triangles: lastFrameDiagnostics.triangles,
         programs: renderer.info.programs?.length ?? 0,
+        quality: {
+          ...quality,
+          antialias: renderer.getContext().getContextAttributes().antialias,
+          canvasSize: [renderer.domElement.width, renderer.domElement.height],
+          ocean: ocean.getDiagnostics(),
+          environment: environment.getDiagnostics(),
+        },
         controls: {
           orbitPivot: 'buoy',
           panEnabled: controls.enablePan,
@@ -233,18 +296,33 @@ async function start() {
       }
       return this.getDiagnostics();
     },
+    samplePerformance({ fps, samples = 1 }) {
+      let changed = false;
+      for (let index = 0; index < samples; index += 1) {
+        changed = adaptiveQuality.sampleFrameRate(fps) || changed;
+      }
+      if (changed) applyRenderQuality();
+      return this.getDiagnostics();
+    },
     };
     renderFrame(harnessTime);
+  }
+
+  // Reveal at the conservative startup resolution before continuous 4K work
+  // begins. Otherwise a costly first animation frame can starve this paint.
+  await loading.reveal();
+  if (harnessMode) {
     window.__WATER_HARNESS__.ready = true;
   } else {
-    renderer.setAnimationLoop(() => {
+    renderer.setAnimationLoop((timestamp) => {
+      if (!document.hidden && adaptiveQuality.observeFrame(timestamp)) {
+        applyRenderQuality();
+      }
       timer.update();
       renderFrame(timer.getElapsed());
       updateFps();
     });
   }
-
-  await loading.reveal();
 }
 
 start().catch((error) => {

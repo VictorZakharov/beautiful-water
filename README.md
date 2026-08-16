@@ -28,6 +28,8 @@ navigation buoy, and an explorable underwater habitat.
   curiosity, habituation, and escape responses to a moving underwater camera.
 - Above-water and underwater rendering states reached continuously by orbiting through the
   animated surface, plus a responsive loading screen and FPS counter.
+- GPU-aware render budgets, high-density antialiasing policy, and frame-time adaptation keep
+  4K displays practical without changing the CSS resolution or the default 1080p presentation.
 - No downloaded scene assets: geometry, behavior, shaders, sky, noise, and habitat details are
   generated in code and released under the MIT license.
 
@@ -59,16 +61,20 @@ deterministic and bounded without dropping coverage. Coverage includes:
 - foam formation, transition, replacement, and long-interval transport;
 - general underwater rendering plus calm, curious, and startled fish behavior;
 - loading-stage order, progress monotonicity, frame cadence, shader warm-up, and WebGL errors;
+- 4K framebuffer budgets, integrated/discrete GPU policy, and adaptive quality recovery;
 - displacement-field correlation at three simulation times to prevent periodic tiling from
   returning unnoticed.
 
 ```bash
 bun run visual:test
+bun run quality:test
+# Optional local 4K startup and FPS profile (not used as a hardware-dependent CI gate)
+bun run performance:profile
 ```
 
 Screenshots, camera and renderer diagnostics, wave-correlation measurements, and startup timing
-are written to `visual-results/`. Set `PLAYWRIGHT_CHROMIUM_PATH` when Chrome or Edge is not in a
-standard location.
+are written to `visual-results/`. The optional profile adds `runtime-4k.json`. Set
+`PLAYWRIGHT_CHROMIUM_PATH` when Chrome or Edge is not in a standard location.
 
 ## Production and GitHub Pages
 
