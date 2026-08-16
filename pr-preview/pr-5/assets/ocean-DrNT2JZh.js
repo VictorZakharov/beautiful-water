@@ -431,15 +431,16 @@ void main() {
     vec2 detailGradient = microGradient(vSurfacePosition, distanceToCamera);
     vec2 combinedGradient = macroGradient + detailGradient;
     vec3 surfaceUp = normalize(vec3(-combinedGradient.x, 1.0, -combinedGradient.y));
-    // Triangle winding changes on wave slopes near the horizon. Orient the
-    // interface by the camera's medium instead of gl_FrontFacing so adjacent
-    // triangles cannot suddenly shade with opposite normals.
-    vec3 normal = uUnderwater < 0.5 ? surfaceUp : -surfaceUp;
-
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-    float viewFacing = clamp(dot(normal, viewDirection), 0.0, 1.0);
+    // Never interpolate or switch between antipodal interface normals. The
+    // previous medium-dependent flip caused a full-frame discontinuity while
+    // crossing the surface (and its WebGPU equivalent normalized a zero
+    // vector at exactly 50%). Evaluate each side with its physical normal and
+    // blend only the resulting colors.
+    vec3 undersideNormal = -surfaceUp;
+    float viewFacing = clamp(abs(dot(surfaceUp, viewDirection)), 0.0, 1.0);
     float fresnel = 0.025 + 0.975 * pow(1.0 - viewFacing, 5.0);
-    vec3 reflectionDirection = reflect(-viewDirection, normal);
+    vec3 reflectionDirection = reflect(-viewDirection, surfaceUp);
     reflectionDirection.y = max(reflectionDirection.y, 0.015);
     float reflectionAzimuth = dot(
       normalize(reflectionDirection.xz + vec2(0.0001)),
@@ -776,7 +777,7 @@ void main() {
     float horizonAbsorption = mix(0.78, 0.52, sunwardReflection);
     surfaceColor = mix(surfaceColor, uHorizonColor, horizonFade * horizonAbsorption);
 
-    vec3 transmissionDirection = refract(-viewDirection, normal, 1.333);
+    vec3 transmissionDirection = refract(-viewDirection, undersideNormal, 1.333);
     float transmissionAvailable = smoothstep(0.001, 0.08, length(transmissionDirection));
     vec3 transmissionSky = skyReflection(normalize(transmissionDirection + vec3(0.0, 0.0001, 0.0)));
     float ceilingTexture = smoothstep(0.42, 0.83,
