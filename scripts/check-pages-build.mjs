@@ -2,7 +2,10 @@ import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const buildRoot = path.resolve('dist');
-const pagesBase = '/beautiful-water/';
+const pagesBase = process.env.PAGES_BASE ?? '/beautiful-water/';
+if (!pagesBase.startsWith('/') || !pagesBase.endsWith('/')) {
+  throw new Error(`PAGES_BASE must be an absolute directory path: ${pagesBase}`);
+}
 const html = await readFile(path.join(buildRoot, 'index.html'), 'utf8');
 const references = [...html.matchAll(/(?:src|href)="([^"]+)"/gi)]
   .map((match) => match[1])

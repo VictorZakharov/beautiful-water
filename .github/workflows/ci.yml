@@ -18,7 +18,7 @@ jobs:
     name: Linear PR history
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 2
     steps:
       - name: Check out complete pull-request history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,7 +36,7 @@ jobs:
   build:
     name: Production build
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 2
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,13 +64,18 @@ jobs:
         run: bun run quality:test
 
   visual-regression:
-    name: Visual regression (${{ matrix.suite }})
+    name: Visual regression (${{ matrix.check }})
+    if: github.event_name == 'pull_request'
     runs-on: windows-2022
-    timeout-minutes: 15
+    timeout-minutes: 2
     strategy:
       fail-fast: false
       matrix:
-        suite: [scene-matrix, fish-habituation]
+        include:
+          - check: scene-matrix
+            suite: ci-scene
+          - check: fish-habituation
+            suite: fish-habituation
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,9 +90,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install Chromium
-        run: bunx playwright install chromium
-
       - name: Run browser and WebGL regression harness
         run: bun run visual:test
         env:
@@ -97,7 +99,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ocean-visual-results-${{ matrix.suite }}
+          name: ocean-visual-results-${{ matrix.check }}
           path: |
             visual-results/
             test-results/

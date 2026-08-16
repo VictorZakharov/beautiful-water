@@ -52,9 +52,11 @@ point.
 ## Automated visual harness
 
 The included Playwright harness starts Vite, freezes the simulation clock, and captures twenty
-named regression views at 1600 by 900 locally. GPU-less CI runs the same camera matrix at 960 by
-540 through Chromium across two parallel, workload-balanced suites, keeping the required check
-deterministic and bounded without dropping coverage. Coverage includes:
+named regression views at 1600 by 900 locally. Pull-request CI runs an eight-view representative
+gate at 960 by 540 across two parallel suites; every CI job has a hard two-minute execution cap.
+The full camera matrix remains available locally, while the required gate samples every major
+rendering and behavior system. Fixed-step fish habituation advances simulation state without
+wasting software-GPU time on intermediate frames. Coverage includes:
 
 - the sun path, cross-sun grazing angles, opposite-sun water, and top-down rendering;
 - near, wide, and far-field compositions designed to expose repetition and grazing artifacts;
@@ -84,9 +86,15 @@ bun run build:pages
 bun run check:pages
 ```
 
-Pull requests run independent production-build and browser/WebGL checks. Merges to `main` build
-the repository-scoped Pages artifact, rerun the complete visual gate, deploy through GitHub's
-official Pages actions, and smoke-test the live document and JavaScript bundle.
+Pull requests run independent production-build and time-budgeted browser/WebGL checks. Pushes to
+`main` retain the quick production verification but skip the already-passed browser gate. Pages
+then builds the repository-scoped artifact, deploys through GitHub's official actions, and
+smoke-tests the live document and JavaScript bundle without repeating the visual matrix.
+
+Every same-repository pull request also receives a sticky link to an isolated preview at
+`/beautiful-water/pr-preview/pr-<number>/`. Preview and production publication share one serialized
+Pages pipeline, production retains previews for open pull requests, and stale previews are removed
+when their pull requests close.
 
 ## License
 

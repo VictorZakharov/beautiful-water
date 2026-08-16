@@ -252,15 +252,16 @@ async function start() {
   if (harnessMode) {
     window.__WATER_HARNESS__ = {
     ready: false,
-    setView({ position, target, time = harnessTime }) {
+    setView({ position, target, time = harnessTime, renderPasses = 2 }) {
       harnessTime = time;
       camera.position.fromArray(position);
       controls.target.fromArray(target);
       camera.updateMatrixWorld();
       controls.update();
-      renderFrame(harnessTime);
-      // A second pass guarantees that projective captures use the final camera.
-      renderFrame(harnessTime);
+      const passes = THREE.MathUtils.clamp(Math.round(renderPasses), 1, 2);
+      for (let pass = 0; pass < passes; pass += 1) {
+        renderFrame(harnessTime);
+      }
       return this.getDiagnostics();
     },
     getDiagnostics() {
@@ -292,8 +293,12 @@ async function start() {
       const frameStep = THREE.MathUtils.clamp(step, 1 / 120, 1 / 20);
       while (harnessTime + 0.0001 < endTime) {
         harnessTime = Math.min(harnessTime + frameStep, endTime);
-        renderFrame(harnessTime);
+        // Fish and buoy behavior need fixed simulation steps, but none of the
+        // intermediate frames need GPU readback. Rendering only the settled
+        // state keeps deterministic behavior checks fast on software WebGL.
+        updateFrameState(harnessTime);
       }
+      renderFrame(harnessTime);
       return this.getDiagnostics();
     },
     samplePerformance({ fps, samples = 1 }) {
