@@ -668,6 +668,44 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
       const webGlSunPath = measureSunPath(leftPixels);
       const webGpuSunPath = measureSunPath(rightPixels);
 
+      const measureSkyDetail = (pixels) => {
+        if (!['sun-facing-low', 'reference-medium'].includes(name)) return null;
+        const luminanceAt = (x, y) => {
+          const offset = (y * width + x) * 4;
+          return pixels[offset] * 0.2126
+            + pixels[offset + 1] * 0.7152
+            + pixels[offset + 2] * 0.0722;
+        };
+        const startX = Math.floor(width * 0.03);
+        const endX = Math.floor(width * 0.97);
+        const startY = Math.floor(height * 0.03);
+        const endY = Math.floor(height * 0.36);
+        let detailSum = 0;
+        let detailedPixels = 0;
+        let samples = 0;
+        for (let y = startY + 2; y < endY - 2; y += 2) {
+          for (let x = startX + 2; x < endX - 2; x += 2) {
+            const center = luminanceAt(x, y);
+            const neighborMean = (
+              luminanceAt(x - 2, y)
+              + luminanceAt(x + 2, y)
+              + luminanceAt(x, y - 2)
+              + luminanceAt(x, y + 2)
+            ) * 0.25;
+            const detail = Math.abs(center - neighborMean);
+            detailSum += detail;
+            if (detail > 2.0) detailedPixels += 1;
+            samples += 1;
+          }
+        }
+        return {
+          meanLaplacian: detailSum / samples / 255,
+          edgeCoverage: detailedPixels / samples,
+        };
+      };
+      const webGlSkyDetail = measureSkyDetail(leftPixels);
+      const webGpuSkyDetail = measureSkyDetail(rightPixels);
+
       let absoluteError = 0;
       let luminanceError = 0;
       let similarPixels = 0;
@@ -726,6 +764,9 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
         sunPath: webGlSunPath && webGpuSunPath
           ? { webgl: webGlSunPath, webgpu: webGpuSunPath }
           : null,
+        skyDetail: webGlSkyDetail && webGpuSkyDetail
+          ? { webgl: webGlSkyDetail, webgpu: webGpuSkyDetail }
+          : null,
       };
     }, { webGlBase64: webGl, webGpuBase64: webGpu, name: view.name });
 
@@ -741,6 +782,7 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
       meanLuminanceError: comparison.meanLuminanceError,
       similarPixelRatio: comparison.similarPixelRatio,
       sunPath: comparison.sunPath,
+      skyDetail: comparison.skyDetail,
     });
   }
 
@@ -785,6 +827,16 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
       metric.sunPath.webgpu.upperDecileContrast,
       `${metric.view} keeps at least 70% of the resolved WebGL glint intensity`,
     ).toBeGreaterThan(metric.sunPath.webgl.upperDecileContrast * 0.70);
+  }
+  for (const metric of metrics.filter(({ skyDetail }) => skyDetail)) {
+    expect(
+      metric.skyDetail.webgpu.meanLaplacian,
+      `${metric.view} WebGPU sky retains resolved cloud edges`,
+    ).toBeGreaterThan(metric.skyDetail.webgl.meanLaplacian * 0.65);
+    expect(
+      metric.skyDetail.webgpu.edgeCoverage,
+      `${metric.view} WebGPU sky does not collapse into broad blurred blobs`,
+    ).toBeGreaterThan(metric.skyDetail.webgl.edgeCoverage * 0.65);
   }
   expect(browserErrors, browserErrors.join('\n')).toEqual([]);
 });

@@ -368,7 +368,7 @@ export function createWebGpuWaterMaterial({
     // NdotV, which stays high on sun-facing facets) so medium/top-down views
     // use the unmodified shared BRDF.
     const grazingResolutionCompensation = mix(
-      2.50,
+      3.30,
       1,
       smoothstep(1.20, 3.00, max(cameraPosition.y, 0)),
     );

@@ -21,46 +21,6 @@ function createSkyTexture() {
   context.fillStyle = gradient;
   context.fillRect(0, 0, width, height);
 
-  let state = 0x7ca21d43;
-  const random = () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-
-  // Draw wrap-safe, layered cloud banks. Keeping the pattern in a texture
-  // removes five octaves of per-pixel sky noise from every reflection pass.
-  context.save();
-  context.filter = 'blur(10px)';
-  for (let cluster = 0; cluster < 18; cluster += 1) {
-    const centerX = random() * width;
-    const centerY = height * (0.10 + random() * 0.31);
-    const clusterWidth = 58 + random() * 120;
-    const clusterHeight = 14 + random() * 30;
-    const horizontalCopies = [centerX - width, centerX, centerX + width];
-    // CanvasTexture's vertical upload convention differs between the WebGPU
-    // and WebGL backends. Mirroring clouds around the equator keeps the upper
-    // skydome populated on both without a runtime texture mutation.
-    for (const copyY of [centerY, height - centerY]) {
-      for (const copyX of horizontalCopies) {
-        context.fillStyle = `rgba(36,62,84,${0.24 + random() * 0.12})`;
-        context.beginPath();
-        context.ellipse(copyX, copyY + clusterHeight * 0.30, clusterWidth, clusterHeight, 0, 0, Math.PI * 2);
-        context.fill();
-        for (let puff = 0; puff < 6; puff += 1) {
-          const x = copyX + (random() - 0.5) * clusterWidth * 1.25;
-          const y = copyY + (random() - 0.58) * clusterHeight;
-          const radiusX = clusterWidth * (0.18 + random() * 0.23);
-          const radiusY = clusterHeight * (0.36 + random() * 0.42);
-          context.fillStyle = `rgba(229,238,242,${0.54 + random() * 0.25})`;
-          context.beginPath();
-          context.ellipse(x, y, radiusX, radiusY, 0, 0, Math.PI * 2);
-          context.fill();
-        }
-      }
-    }
-  }
-  context.restore();
-
   const texture = new THREE.CanvasTexture(textureCanvas);
   texture.name = 'WebGPU procedural sky';
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -97,7 +57,6 @@ function createCloudTexture() {
   textureCanvas.height = 256;
   const context = textureCanvas.getContext('2d');
   context.clearRect(0, 0, 512, 256);
-  context.filter = 'blur(7px)';
 
   const drawPuff = (x, y, radiusX, radiusY, color) => {
     const gradient = context.createRadialGradient(x, y, 1, x, y, radiusX);
@@ -113,7 +72,7 @@ function createCloudTexture() {
     context.restore();
   };
 
-  drawPuff(256, 171, 205, 46, 'rgba(68,91,108,0.48)');
+  drawPuff(256, 171, 205, 46, 'rgba(68,91,108,0.42)');
   const puffs = [
     [75, 148, 68, 48], [138, 121, 83, 66], [211, 130, 92, 76],
     [282, 99, 108, 88], [359, 124, 94, 71], [432, 151, 72, 50],
@@ -122,6 +81,33 @@ function createCloudTexture() {
   for (const [x, y, radiusX, radiusY] of puffs) {
     drawPuff(x, y, radiusX, radiusY, 'rgba(231,239,243,0.82)');
   }
+
+  // Small lobes and transparent erosion give the silhouette actual cloud
+  // detail. The former whole-canvas blur turned these into giant soft blobs.
+  let detailState = 0x48f2a31d;
+  const random = () => {
+    detailState = (Math.imul(detailState, 1664525) + 1013904223) >>> 0;
+    return detailState / 4294967296;
+  };
+  for (let index = 0; index < 34; index += 1) {
+    const x = 61 + random() * 390;
+    const normalized = Math.abs(x - 256) / 195;
+    const y = 103 + random() * 67 + normalized * 32;
+    const radiusX = 10 + random() * 24;
+    const radiusY = radiusX * (0.42 + random() * 0.34);
+    drawPuff(x, y, radiusX, radiusY, `rgba(242,247,248,${0.48 + random() * 0.30})`);
+  }
+
+  context.save();
+  context.globalCompositeOperation = 'destination-out';
+  for (let index = 0; index < 12; index += 1) {
+    const x = 52 + random() * 408;
+    const y = 172 + random() * 28;
+    const radiusX = 5 + random() * 12;
+    const radiusY = 4 + random() * 7;
+    drawPuff(x, y, radiusX, radiusY, `rgba(0,0,0,${0.26 + random() * 0.28})`);
+  }
+  context.restore();
 
   const texture = new THREE.CanvasTexture(textureCanvas);
   texture.name = 'WebGPU cloud bank';
@@ -154,8 +140,8 @@ function createCloudDeck() {
     const center = direction.clone().multiplyScalar(330);
     const right = new THREE.Vector3().crossVectors(worldUp, direction).normalize();
     const up = new THREE.Vector3().crossVectors(direction, right).normalize();
-    const halfWidth = 30 + random() * 32;
-    const halfHeight = 11 + random() * 11;
+    const halfWidth = 22 + random() * 28;
+    const halfHeight = 8 + random() * 9;
     const vertexOffset = positions.length / 3;
     for (const [side, vertical] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
       const corner = center.clone()
