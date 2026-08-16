@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
+import { measureNormalizedImageDifference } from './screenshot-metrics.js';
 import { measureWaveFieldCorrelation } from './wave-field.js';
 
 const rendererMode = process.env.RENDERER_MODE ?? 'webgpu';
@@ -495,6 +496,7 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
     'underwater',
   ].includes(name));
   const captures = new Map();
+  const transitionCaptures = new Map();
   const diagnosticsByMode = {};
   const browserErrors = [];
   page.on('console', (message) => {
@@ -537,6 +539,56 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
         screenshot,
       );
     }
+
+    for (const underwaterBlend of [0.48, 0.50, 0.52]) {
+      const diagnostics = await page.evaluate(
+        (preset) => window.__WATER_HARNESS__.setView(preset),
+        {
+          position: [8.4, -0.14, 11.7],
+          target: [0, -0.14, 0],
+          time: fixedTime,
+          renderPasses: 2,
+          underwaterBlend,
+        },
+      );
+      expect(diagnostics.underwaterMix).toBeCloseTo(underwaterBlend, 5);
+      const screenshot = await page.screenshot({
+        animations: 'disabled',
+        fullPage: false,
+      });
+      const key = `${mode}:${underwaterBlend.toFixed(2)}`;
+      transitionCaptures.set(key, screenshot);
+      const transitionPath = path.join(
+        parityDirectory,
+        `waterline-transition-${underwaterBlend.toFixed(2)}-${mode}.png`,
+      );
+      await writeFile(transitionPath, screenshot);
+      if (underwaterBlend === 0.50) {
+        await testInfo.attach(`${mode} waterline midpoint`, {
+          path: transitionPath,
+          contentType: 'image/png',
+        });
+      }
+    }
+  }
+
+  const transitionMetrics = {};
+  for (const mode of ['webgl', 'webgpu']) {
+    const entering = await measureNormalizedImageDifference(
+      page,
+      transitionCaptures.get(`${mode}:0.48`),
+      transitionCaptures.get(`${mode}:0.50`),
+    );
+    const submerged = await measureNormalizedImageDifference(
+      page,
+      transitionCaptures.get(`${mode}:0.50`),
+      transitionCaptures.get(`${mode}:0.52`),
+    );
+    transitionMetrics[mode] = { entering, submerged };
+    expect(
+      Math.max(entering, submerged),
+      `${mode} crosses the waterline without a frame-sized visual discontinuity`,
+    ).toBeLessThan(0.045);
   }
 
   const metrics = [];
@@ -694,7 +746,7 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
 
   await writeFile(
     path.join(parityDirectory, 'metrics.json'),
-    `${JSON.stringify({ diagnosticsByMode, metrics }, null, 2)}\n`,
+    `${JSON.stringify({ diagnosticsByMode, metrics, transitionMetrics }, null, 2)}\n`,
   );
   const meanAbsoluteError = metrics.reduce(
     (sum, metric) => sum + metric.meanAbsoluteError,

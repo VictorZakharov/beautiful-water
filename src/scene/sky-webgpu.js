@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { MeshBasicNodeMaterial } from 'three/webgpu';
+import { mix, smoothstep, texture, uniform, vec3 } from 'three/tsl';
 
 const SUN_DISTANCE = 315;
 
@@ -192,14 +194,20 @@ function createCloudDeck() {
 }
 
 export function createWebGpuSky(scene, sunDirection) {
-  const skyMaterial = new THREE.MeshBasicMaterial({
-    map: createSkyTexture(),
+  const underwaterNode = uniform(0);
+  const skyTexture = createSkyTexture();
+  const skyMaterial = new MeshBasicNodeMaterial({
     side: THREE.FrontSide,
     depthWrite: false,
     depthTest: false,
     fog: false,
     toneMapped: false,
   });
+  skyMaterial.colorNode = mix(
+    texture(skyTexture).rgb,
+    vec3(0.0018, 0.045, 0.065),
+    smoothstep(0.02, 0.98, underwaterNode),
+  );
   // Microsoft WARP can cull BackSide node materials inconsistently. Invert
   // the sphere once and render ordinary front faces so native adapters and
   // software WebGPU execute the same portable rasterization path.
@@ -236,18 +244,18 @@ export function createWebGpuSky(scene, sunDirection) {
     sun,
     uniforms: { uSunVisibility: visibility },
     update(time, underwaterMix, camera) {
-      const surfaceVisibility = 1 - THREE.MathUtils.smoothstep(underwaterMix, 0.55, 0.98);
+      // Fade continuously into the underwater backdrop. A visibility toggle
+      // near the end of the dive exposed a flat-color horizon for one frame.
+      const surfaceVisibility = 1 - THREE.MathUtils.smoothstep(underwaterMix, 0.02, 0.98);
       visibility.value = surfaceVisibility;
-      sky.visible = underwaterMix < 0.985;
+      underwaterNode.value = underwaterMix;
       sky.position.copy(camera.position);
       sky.rotation.y = time * 0.00012;
       clouds.position.copy(camera.position);
       clouds.rotation.y = time * 0.00016;
       clouds.material.opacity = 0.78 * surfaceVisibility;
-      clouds.visible = surfaceVisibility > 0.015;
       sun.position.copy(camera.position).addScaledVector(sunDirection, SUN_DISTANCE);
       sunMaterial.opacity = 0.82 * surfaceVisibility;
-      sun.visible = surfaceVisibility > 0.015;
     },
   };
 }

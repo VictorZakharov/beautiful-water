@@ -92,12 +92,11 @@ export function createWebGpuWaterMaterial({
       1,
       combinedGradient.y.negate(),
     ));
-    const interfaceNormal = normalize(mix(
-      surfaceUp,
-      surfaceUp.negate(),
-      underwaterNode,
-    ));
-    const viewFacing = clamp(dot(interfaceNormal, viewDirection), 0, 1);
+    // An interpolated normal and its exact opposite collapse to zero at a
+    // 50% medium blend. Keep stable normals for both sides of the interface
+    // and blend the shaded colors instead.
+    const undersideNormal = surfaceUp.negate();
+    const viewFacing = clamp(abs(dot(surfaceUp, viewDirection)), 0, 1);
     const fresnel = float(0.025).add(
       pow(float(1).sub(viewFacing), 5).mul(0.975),
     );
@@ -181,7 +180,7 @@ export function createWebGpuWaterMaterial({
     reflectionSampler.uvNode = reflectionSampler.uvNode.add(
       combinedGradient.mul(mix(0.003, 0.009, viewFacing)),
     );
-    const reflectionDirection = reflect(viewDirection.negate(), interfaceNormal);
+    const reflectionDirection = reflect(viewDirection.negate(), surfaceUp);
     const reflectedSky = mix(
       vec3(0.075, 0.23, 0.43),
       vec3(0.007, 0.045, 0.16),
@@ -460,7 +459,7 @@ export function createWebGpuWaterMaterial({
     ).add(vec3(0.025, 0.16, 0.17).mul(ceilingTexture).mul(viewFacing)).toVar();
     const transmissionDirection = refract(
       viewDirection.negate(),
-      interfaceNormal,
+      undersideNormal,
       1.333,
     );
     const transmissionAvailable = smoothstep(

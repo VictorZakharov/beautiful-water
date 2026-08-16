@@ -75,6 +75,10 @@ const scenePipeline = await loadScenePipeline(rendererInfo.pipeline);
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x063c48, 0.00001);
 const underwaterBackground = new THREE.Color(0x063c48);
+// Keep an opaque backdrop behind both skydomes. The sky owns the visible
+// air-to-water blend; swapping Scene.background halfway through that blend
+// exposed a solid strip at the finite ocean horizon.
+scene.background = underwaterBackground;
 
 const camera = new THREE.PerspectiveCamera(51, 1, 0.08, 520);
 camera.position.set(7.8, 3.65, 10.8);
@@ -171,6 +175,7 @@ let fpsFrames = 0;
 let fpsSampleStart = performance.now();
 let smoothedFps = 60;
 let harnessTime = 11.75;
+let harnessUnderwaterMix = null;
 let lastFrameDiagnostics = { drawCalls: 0, triangles: 0 };
 let cameraIsUnderwater = false;
 let renderedFrames = 0;
@@ -197,7 +202,7 @@ function updateFrameState(elapsed) {
   const underwaterTarget = camera.position.y < cameraSurface.height ? 1 : 0;
   cameraIsUnderwater = underwaterTarget > 0.5;
   underwaterMix = harnessMode
-    ? underwaterTarget
+    ? (harnessUnderwaterMix ?? underwaterTarget)
     : THREE.MathUtils.lerp(underwaterMix, underwaterTarget, 0.085);
 
   ocean.update(elapsed, underwaterMix);
@@ -208,7 +213,6 @@ function updateFrameState(elapsed) {
   underwaterRays.update(elapsed, underwaterMix, camera);
 
   scene.fog.density = THREE.MathUtils.lerp(0.0017, 0.038, underwaterMix);
-  scene.background = underwaterMix > 0.5 ? underwaterBackground : null;
   renderer.toneMappingExposure = THREE.MathUtils.lerp(0.90, 0.76, underwaterMix);
   app.classList.toggle('is-underwater', underwaterMix > 0.5);
 }
@@ -284,8 +288,17 @@ async function start() {
   if (harnessMode) {
     window.__WATER_HARNESS__ = {
     ready: false,
-    setView({ position, target, time = harnessTime, renderPasses = 2 }) {
+    setView({
+      position,
+      target,
+      time = harnessTime,
+      renderPasses = 2,
+      underwaterBlend = null,
+    }) {
       harnessTime = time;
+      harnessUnderwaterMix = Number.isFinite(underwaterBlend)
+        ? THREE.MathUtils.clamp(underwaterBlend, 0, 1)
+        : null;
       camera.position.fromArray(position);
       controls.target.fromArray(target);
       camera.updateMatrixWorld();
@@ -302,6 +315,7 @@ async function start() {
         camera: camera.position.toArray(),
         target: controls.target.toArray(),
         underwater: underwaterMix > 0.5,
+        underwaterMix,
         drawCalls: lastFrameDiagnostics.drawCalls,
         triangles: lastFrameDiagnostics.triangles,
         programs: renderer.info.programs?.length ?? (lastFrameDiagnostics.drawCalls > 0 ? 1 : 0),

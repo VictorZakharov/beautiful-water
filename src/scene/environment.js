@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 
+const SEABED_SIZE = 420;
+
 export function seabedHeight(x, z) {
   return -3.55
     + Math.sin(x * 0.105 + z * 0.035) * 0.17
@@ -43,7 +45,10 @@ function createSeabedTexture() {
   texture.name = 'Procedural shallow seabed';
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(9, 9);
+  // Preserve the original 20-world-unit grain scale across the full ocean
+  // footprint so the finite floor cannot reveal a flat backdrop at grazing
+  // underwater angles.
+  texture.repeat.set(SEABED_SIZE / 20, SEABED_SIZE / 20);
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = true;
@@ -216,7 +221,12 @@ export function createEnvironment(
     })
     : webGlSeabedMaterial;
 
-  const seabedGeometry = new THREE.PlaneGeometry(180, 180, 150, 150);
+  const seabedGeometry = new THREE.PlaneGeometry(
+    SEABED_SIZE,
+    SEABED_SIZE,
+    150,
+    150,
+  );
   seabedGeometry.rotateX(-Math.PI / 2);
   const seabedPositions = seabedGeometry.attributes.position;
   for (let index = 0; index < seabedPositions.count; index += 1) {
