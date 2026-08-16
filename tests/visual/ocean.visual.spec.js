@@ -564,6 +564,56 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
       sampleContext.drawImage(right, 0, 0);
       const rightPixels = sampleContext.getImageData(0, 0, width, height).data;
 
+      const measureSunPath = (pixels) => {
+        if (!['sun-facing-low', 'reference-medium'].includes(name)) return null;
+        const luminanceAt = (x, y) => {
+          const offset = (y * width + x) * 4;
+          return pixels[offset] * 0.2126
+            + pixels[offset + 1] * 0.7152
+            + pixels[offset + 2] * 0.0722;
+        };
+        const startY = Math.floor(height * 0.31);
+        const endY = Math.floor(height * 0.72);
+        const centerStart = Math.floor(width * 0.44);
+        const centerEnd = Math.floor(width * 0.56);
+        const sideRanges = [
+          [Math.floor(width * 0.25), Math.floor(width * 0.37)],
+          [Math.floor(width * 0.63), Math.floor(width * 0.75)],
+        ];
+        let contrastSum = 0;
+        let highlighted = 0;
+        let samples = 0;
+        const positiveContrasts = [];
+        for (let y = startY; y < endY; y += 3) {
+          let sideLuminance = 0;
+          let sideSamples = 0;
+          for (const [startX, endX] of sideRanges) {
+            for (let x = startX; x < endX; x += 3) {
+              sideLuminance += luminanceAt(x, y);
+              sideSamples += 1;
+            }
+          }
+          const rowBaseline = sideLuminance / sideSamples;
+          for (let x = centerStart; x < centerEnd; x += 3) {
+            const contrast = Math.max(luminanceAt(x, y) - rowBaseline, 0);
+            contrastSum += contrast;
+            positiveContrasts.push(contrast);
+            if (contrast > 15) highlighted += 1;
+            samples += 1;
+          }
+        }
+        positiveContrasts.sort((a, b) => a - b);
+        return {
+          meanContrast: contrastSum / samples / 255,
+          highlightCoverage: highlighted / samples,
+          upperDecileContrast: positiveContrasts[
+            Math.floor(positiveContrasts.length * 0.9)
+          ] / 255,
+        };
+      };
+      const webGlSunPath = measureSunPath(leftPixels);
+      const webGpuSunPath = measureSunPath(rightPixels);
+
       let absoluteError = 0;
       let luminanceError = 0;
       let similarPixels = 0;
@@ -602,6 +652,15 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
         width + 14,
         25,
       );
+      if (webGlSunPath && webGpuSunPath) {
+        output.font = '500 13px system-ui, sans-serif';
+        output.fillText(
+          `sun-path contrast ${(webGpuSunPath.meanContrast * 100).toFixed(2)}%`
+            + ` (WebGL ${(webGlSunPath.meanContrast * 100).toFixed(2)}%)`,
+          width + 350,
+          25,
+        );
+      }
       output.fillStyle = '#62d8c7';
       output.fillRect(width - 1, 0, 2, outputCanvas.height);
 
@@ -610,6 +669,9 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
         meanAbsoluteError: normalizedError,
         meanLuminanceError: luminanceError / pixelCount / 255,
         similarPixelRatio: similarPixels / pixelCount,
+        sunPath: webGlSunPath && webGpuSunPath
+          ? { webgl: webGlSunPath, webgpu: webGpuSunPath }
+          : null,
       };
     }, { webGlBase64: webGl, webGpuBase64: webGpu, name: view.name });
 
@@ -624,6 +686,7 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
       meanAbsoluteError: comparison.meanAbsoluteError,
       meanLuminanceError: comparison.meanLuminanceError,
       similarPixelRatio: comparison.similarPixelRatio,
+      sunPath: comparison.sunPath,
     });
   }
 
@@ -655,5 +718,19 @@ parityTest('captures WebGL and WebGPU side by side', async ({ page }, testInfo) 
     Math.min(...metrics.map(({ similarPixelRatio }) => similarPixelRatio)),
     'every parity view retains a majority of perceptually similar pixels',
   ).toBeGreaterThan(0.62);
+  for (const metric of metrics.filter(({ sunPath }) => sunPath)) {
+    expect(
+      metric.sunPath.webgpu.meanContrast,
+      `${metric.view} keeps at least 70% of the WebGL sun-path contrast`,
+    ).toBeGreaterThan(metric.sunPath.webgl.meanContrast * 0.70);
+    expect(
+      metric.sunPath.webgpu.highlightCoverage,
+      `${metric.view} keeps at least 60% of the WebGL sun-path coverage`,
+    ).toBeGreaterThan(metric.sunPath.webgl.highlightCoverage * 0.60);
+    expect(
+      metric.sunPath.webgpu.upperDecileContrast,
+      `${metric.view} keeps at least 70% of the resolved WebGL glint intensity`,
+    ).toBeGreaterThan(metric.sunPath.webgl.upperDecileContrast * 0.70);
+  }
   expect(browserErrors, browserErrors.join('\n')).toEqual([]);
 });

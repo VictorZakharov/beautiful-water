@@ -7,6 +7,8 @@ import {
   floor,
   fract,
   max,
+  pow,
+  sqrt,
   smoothstep,
   texture,
   vec2,
@@ -14,9 +16,11 @@ import {
 import { NOISE_TEXTURE_SIZE } from './noise-texture.js';
 
 function turn(position, scale = 2.04, offset = 9.2) {
+  // GLSL's mat2 constructor is column-major. Keep this orientation identical
+  // to mat2(0.80, -0.60, 0.60, 0.80) * position in the WebGL shader.
   return vec2(
-    position.x.mul(0.80).sub(position.y.mul(0.60)),
-    position.x.mul(0.60).add(position.y.mul(0.80)),
+    position.x.mul(0.80).add(position.y.mul(0.60)),
+    position.x.mul(-0.60).add(position.y.mul(0.80)),
   ).mul(scale).add(vec2(offset));
 }
 
@@ -41,6 +45,44 @@ export function fbmNode(position, noiseMap) {
   return value.add(valueNoiseNode(samplePosition, noiseMap).mul(0.0625));
 }
 
+export function distributionGgxNode(alpha, normalDotHalf) {
+  const alphaSquared = alpha.mul(alpha);
+  const denominator = normalDotHalf.mul(normalDotHalf)
+    .mul(alphaSquared.sub(1))
+    .add(1);
+  return alphaSquared.div(max(
+    denominator.mul(denominator).mul(Math.PI),
+    0.00001,
+  ));
+}
+
+export function visibilitySmithGgxCorrelatedNode(
+  alpha,
+  normalDotView,
+  normalDotLight,
+) {
+  const alphaSquared = alpha.mul(alpha);
+  const oneMinusAlphaSquared = float(1).sub(alphaSquared);
+  const viewTerm = normalDotLight.mul(sqrt(
+    alphaSquared.add(
+      oneMinusAlphaSquared.mul(normalDotView).mul(normalDotView),
+    ),
+  ));
+  const lightTerm = normalDotView.mul(sqrt(
+    alphaSquared.add(
+      oneMinusAlphaSquared.mul(normalDotLight).mul(normalDotLight),
+    ),
+  ));
+  return float(0.5).div(max(viewTerm.add(lightTerm), 0.00001));
+}
+
+export function fresnelSchlickNode(viewDotHalf) {
+  const waterF0 = 0.02037;
+  return float(waterF0).add(
+    pow(float(1).sub(viewDotHalf), 5).mul(1 - waterF0),
+  );
+}
+
 function rippleGradient(position, direction, frequency, amplitude, speed, timeNode) {
   const phase = dot(position, vec2(direction[0], direction[1]))
     .mul(frequency)
@@ -48,6 +90,40 @@ function rippleGradient(position, direction, frequency, amplitude, speed, timeNo
   return vec2(direction[0], direction[1])
     .mul(amplitude * frequency)
     .mul(cos(phase));
+}
+
+function microHeightNode(position, timeNode, noiseMap) {
+  const turned = vec2(
+    position.x.mul(0.78).add(position.y.mul(0.63)),
+    position.x.mul(-0.63).add(position.y.mul(0.78)),
+  );
+  const counterTurned = vec2(
+    position.x.mul(0.58).sub(position.y.mul(0.81)),
+    position.x.mul(0.81).add(position.y.mul(0.58)),
+  );
+  const drift = vec2(timeNode.mul(0.068), timeNode.mul(-0.047));
+  const broad = valueNoiseNode(position.mul(1.65).add(drift), noiseMap);
+  const middle = valueNoiseNode(
+    turned.mul(3.7).sub(drift.mul(1.37)).add(vec2(13.7)),
+    noiseMap,
+  );
+  const detail = valueNoiseNode(
+    turned.mul(7.9).add(drift.mul(1.74)).sub(vec2(8.4)),
+    noiseMap,
+  );
+  const fine = valueNoiseNode(
+    counterTurned.mul(15.8).sub(drift.mul(2.1)).add(vec2(31.6)),
+    noiseMap,
+  );
+  const sparkle = valueNoiseNode(
+    turned.mul(31).add(drift.mul(2.8)).sub(vec2(21.9)),
+    noiseMap,
+  );
+  return broad.mul(0.030)
+    .add(middle.mul(0.015))
+    .add(detail.mul(0.0065))
+    .add(fine.mul(0.0026))
+    .add(sparkle.mul(0.0009));
 }
 
 export function microGradientNode(
@@ -81,7 +157,15 @@ export function microGradientNode(
   const fineDistanceFade = float(1).sub(smoothstep(20, 92, distanceToCamera));
   const footprint = max(dFdx(position).length(), dFdy(position).length());
   const fineFootprintFade = float(1).sub(smoothstep(0.025, 0.19, footprint));
+  const epsilon = 0.028;
+  const noiseGradient = vec2(
+    microHeightNode(position.add(vec2(epsilon, 0)), timeNode, noiseMap)
+      .sub(microHeightNode(position.sub(vec2(epsilon, 0)), timeNode, noiseMap)),
+    microHeightNode(position.add(vec2(0, epsilon)), timeNode, noiseMap)
+      .sub(microHeightNode(position.sub(vec2(0, epsilon)), timeNode, noiseMap)),
+  ).div(2 * epsilon);
   return coarse.mul(coarseFade)
     .add(medium.mul(mediumFade))
-    .add(fine.mul(fineDistanceFade).mul(fineFootprintFade));
+    .add(fine.mul(fineDistanceFade).mul(fineFootprintFade))
+    .add(noiseGradient.mul(mediumFade).mul(fineFootprintFade));
 }

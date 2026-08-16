@@ -5,9 +5,12 @@ import {
   abs,
   cameraPosition,
   clamp,
+  dFdx,
+  dFdy,
   dot,
   exp,
   float,
+  fwidth,
   max,
   min,
   mix,
@@ -29,9 +32,12 @@ import {
 } from 'three/tsl';
 import { OCEAN_WAVES } from './waves.js';
 import {
+  distributionGgxNode,
   fbmNode,
+  fresnelSchlickNode,
   microGradientNode,
   valueNoiseNode,
+  visibilitySmithGgxCorrelatedNode,
 } from './webgpu-water-functions.js';
 import { createWebGpuWavePositionNode } from './webgpu-wave-nodes.js';
 
@@ -248,27 +254,130 @@ export function createWebGpuWaterMaterial({
         .mul(float(0.24).add(backLighting.mul(0.76))),
     );
 
+    // Match the WebGL sun path exactly. A derivative-widened GGX lobe keeps
+    // reflected energy visible as individual wave facets become sub-pixel.
     const halfDirection = normalize(viewDirection.add(lightDirection));
+    const normalDotView = max(dot(surfaceUp, viewDirection), 0.001);
+    const normalDotLight = max(dot(surfaceUp, lightDirection), 0.001);
     const normalDotHalf = max(dot(surfaceUp, halfDirection), 0);
-    const normalDotLight = max(dot(surfaceUp, lightDirection), 0);
-    const glitterPosition = surfacePosition
-      .sub(vec2(dominantWave.direction.x, dominantWave.direction.y)
-        .mul(timeNode.mul(0.31)))
-      .add(combinedGradient.mul(0.16));
-    const glitterNoise = fbmNode(
-      vec2(glitterPosition.x.mul(1.8), glitterPosition.y.mul(3.9))
-        .add(vec2(7.3, -4.8)),
-      noiseMap,
+    const viewDotHalf = max(dot(viewDirection, halfDirection), 0);
+    const normalDx = dFdx(surfaceUp);
+    const normalDy = dFdy(surfaceUp);
+    const normalVariance = max(
+      dot(normalDx, normalDx),
+      dot(normalDy, normalDy),
     );
-    const glitterMask = smoothstep(0.51, 0.72, glitterNoise);
-    const broadGlitter = pow(normalDotHalf, 34).mul(0.34);
-    const sharpGlitter = pow(normalDotHalf, 145)
-      .mul(glitterMask)
-      .mul(1.35);
+    const baseRoughness = mix(
+      0.040,
+      0.105,
+      smoothstep(22, 155, distanceToCamera),
+    );
+    const microfacetAlpha = clamp(
+      baseRoughness.mul(baseRoughness)
+        .add(min(normalVariance.mul(0.32), 0.055)),
+      0.0012,
+      0.052,
+    );
+    const sunFresnel = fresnelSchlickNode(viewDotHalf);
+    const distribution = distributionGgxNode(microfacetAlpha, normalDotHalf);
+    const visibility = visibilitySmithGgxCorrelatedNode(
+      microfacetAlpha,
+      normalDotView,
+      normalDotLight,
+    );
+    const rawSunSpecular = distribution
+      .mul(visibility)
+      .mul(sunFresnel)
+      .mul(normalDotLight);
+    const sunSpecular = pow(
+      rawSunSpecular.div(float(1).add(rawSunSpecular)),
+      1.22,
+    );
+
+    // The broad lobe locates a continuous reflection path; the advected
+    // multi-scale mask resolves it into wind-oriented sparkles.
+    const broadAlpha = clamp(microfacetAlpha.mul(2.7).add(0.010), 0.014, 0.088);
+    const broadDistribution = distributionGgxNode(broadAlpha, normalDotHalf);
+    const broadVisibility = visibilitySmithGgxCorrelatedNode(
+      broadAlpha,
+      normalDotView,
+      normalDotLight,
+    );
+    const rawBroadSpecular = broadDistribution
+      .mul(broadVisibility)
+      .mul(sunFresnel)
+      .mul(normalDotLight);
+    const broadSpecular = rawBroadSpecular.div(
+      float(1).add(rawBroadSpecular),
+    );
+
+    const glitterWind = vec2(
+      dominantWave.direction.x,
+      dominantWave.direction.y,
+    );
+    const glitterCross = vec2(-dominantWave.direction.y, dominantWave.direction.x);
+    const glitterPosition = surfacePosition
+      .sub(glitterWind.mul(timeNode.mul(0.31)))
+      .add(glitterCross.mul(timeNode.mul(0.047)))
+      .add(combinedGradient.mul(0.16));
+    const glitterUv = vec2(
+      dot(glitterPosition, glitterWind).mul(0.72),
+      dot(glitterPosition, glitterCross).mul(1.58),
+    );
+    // GLSL matrices are column-major. This mirrors
+    // mat2(0.61, -0.79, 0.79, 0.61) * glitterUv in the WebGL shader.
+    const turnedGlitterUv = vec2(
+      glitterUv.x.mul(0.61).add(glitterUv.y.mul(0.79)),
+      glitterUv.x.mul(-0.79).add(glitterUv.y.mul(0.61)),
+    );
+    const glitterNoise = valueNoiseNode(
+      glitterUv.mul(2.5).add(vec2(7.3, -4.8)),
+      noiseMap,
+    ).mul(0.26)
+      .add(valueNoiseNode(
+        turnedGlitterUv.mul(8.8).add(vec2(-13.2, 19.6)),
+        noiseMap,
+      ).mul(0.47))
+      .add(valueNoiseNode(
+        turnedGlitterUv.mul(21.5).add(vec2(31.7, -9.1)),
+        noiseMap,
+      ).mul(0.27));
+    const glitterAa = max(fwidth(glitterNoise).mul(1.45), 0.022);
+    const resolvedOccupancy = smoothstep(
+      float(0.50).sub(glitterAa),
+      float(0.69).add(glitterAa),
+      glitterNoise,
+    );
+    const glitterSparkles = smoothstep(
+      float(0.67).sub(glitterAa),
+      float(0.83).add(glitterAa),
+      glitterNoise,
+    );
+    const resolvedGlitter = float(1).sub(
+      smoothstep(62, 175, distanceToCamera),
+    );
+    const glitterOccupancy = mix(0.18, resolvedOccupancy, resolvedGlitter);
+    const glitterEnergy = sunSpecular
+      .mul(mix(0.04, 0.92, glitterOccupancy))
+      .add(
+        broadSpecular
+          .mul(glitterOccupancy.mul(0.28).add(glitterSparkles.mul(0.72)))
+          .mul(0.92),
+      );
+    // WebGL's MSAA retains more sub-pixel solar facets when the camera skims
+    // the mean plane. Key this correction to camera height (not per-fragment
+    // NdotV, which stays high on sun-facing facets) so medium/top-down views
+    // use the unmodified shared BRDF.
+    const grazingResolutionCompensation = mix(
+      2.50,
+      1,
+      smoothstep(1.20, 3.00, max(cameraPosition.y, 0)),
+    );
     surfaceColor.addAssign(
       vec3(1.0, 0.84, 0.61)
-        .mul(broadGlitter.add(sharpGlitter))
-        .mul(normalDotLight),
+        .mul(glitterEnergy)
+        .mul(2.85)
+        .mul(grazingResolutionCompensation),
     );
 
     const windDirection = vec2(
