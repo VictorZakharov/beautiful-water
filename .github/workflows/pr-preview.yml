@@ -1,0 +1,198 @@
+name: PR preview
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build or remove PR preview
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      (github.event.action != 'closed' || github.event.pull_request.merged != true)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      SITE_ORIGIN: ${{ vars.SITE_ORIGIN || format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) }}
+    outputs:
+      preview_url: ${{ steps.preview-paths.outputs.preview_url }}
+      should_deploy: ${{ steps.stage-preview.outputs.changed }}
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Mark preview as building
+        if: github.event.action != 'closed'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
+        with:
+          header: beautiful-water-pr-preview
+          message: |
+            **PR preview:** building `${{ github.event.pull_request.head.sha }}`.
+
+      - name: Resolve preview paths
+        id: preview-paths
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          preview_base="/beautiful-water/pr-preview/pr-${PR_NUMBER}/"
+          preview_url="${SITE_ORIGIN%/}/pr-preview/pr-${PR_NUMBER}/"
+          echo "preview_base=${preview_base}" >> "${GITHUB_OUTPUT}"
+          echo "preview_url=${preview_url}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Bun
+        if: github.event.action != 'closed'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.11
+
+      - name: Install dependencies
+        if: github.event.action != 'closed'
+        run: bun install --frozen-lockfile
+
+      - name: Build preview
+        if: github.event.action != 'closed'
+        env:
+          PREVIEW_BASE: ${{ steps.preview-paths.outputs.preview_base }}
+        run: bunx vite build --base="${PREVIEW_BASE}"
+
+      - name: Verify preview asset paths
+        if: github.event.action != 'closed'
+        env:
+          PAGES_BASE: ${{ steps.preview-paths.outputs.preview_base }}
+        run: bun run check:pages
+
+      - name: Stage or remove preview
+        id: stage-preview
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_ACTION: ${{ github.event.action }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          pages_dir="${RUNNER_TEMP}/pages"
+          preview_dir="${pages_dir}/pr-preview/pr-${PR_NUMBER}"
+
+          if ! git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            echo "The gh-pages aggregate branch is missing. Run the production Pages workflow first."
+            exit 1
+          fi
+
+          git fetch --no-tags --depth=1 origin +refs/heads/gh-pages:refs/remotes/origin/gh-pages
+          git worktree add --detach "${pages_dir}" origin/gh-pages
+
+          if [[ "${PR_ACTION}" == "closed" ]]; then
+            rm -rf "${preview_dir}"
+          else
+            mkdir -p "${preview_dir}"
+            find "${preview_dir}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+            cp -a dist/. "${preview_dir}/"
+            printf '{"headSha":"%s"}\n' "${HEAD_SHA}" > "${preview_dir}/preview-metadata.json"
+          fi
+          touch "${pages_dir}/.nojekyll"
+
+          git -C "${pages_dir}" config user.name "github-actions[bot]"
+          git -C "${pages_dir}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${pages_dir}" add -A
+
+          if git -C "${pages_dir}" diff --cached --quiet; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          git -C "${pages_dir}" commit -m "Preview PR #${PR_NUMBER}: ${PR_ACTION}"
+          git -C "${pages_dir}" push origin HEAD:gh-pages
+          echo "changed=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload aggregated Pages artifact
+        if: steps.stage-preview.outputs.changed == 'true'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/pages
+          include-hidden-files: true
+
+      - name: Mark unchanged preview as ready
+        if: github.event.action != 'closed' && steps.stage-preview.outputs.changed == 'false' && success()
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
+        with:
+          header: beautiful-water-pr-preview
+          message: |
+            **PR preview:** ready for `${{ github.event.pull_request.head.sha }}`.
+
+            [Open preview](${{ steps.preview-paths.outputs.preview_url }})
+
+      - name: Mark removed preview
+        if: github.event.action == 'closed' && steps.stage-preview.outputs.changed == 'false' && success()
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
+        with:
+          header: beautiful-water-pr-preview
+          message: '**PR preview:** removed.'
+
+      - name: Mark preview workflow as failed
+        if: failure()
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
+        with:
+          header: beautiful-water-pr-preview
+          message: |
+            **PR preview:** failed before publication.
+
+            [Open workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+  deploy:
+    name: Publish PR preview
+    needs: publish
+    if: needs.publish.outputs.should_deploy == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      pull-requests: write
+    environment:
+      name: github-pages-preview
+      url: ${{ needs.publish.outputs.preview_url }}
+    steps:
+      - name: Deploy aggregated Pages artifact
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+
+      - name: Mark published preview as ready
+        if: success() && github.event.action != 'closed'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
+        with:
+          header: beautiful-water-pr-preview
+          message: |
+            **PR preview:** ready for `${{ github.event.pull_request.head.sha }}`.
+
+            [Open preview](${{ needs.publish.outputs.preview_url }})
+
+      - name: Mark published preview as removed
+        if: success() && github.event.action == 'closed'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
+        with:
+          header: beautiful-water-pr-preview
+          message: '**PR preview:** removed.'
+
+      - name: Mark preview publication as failed
+        if: failure()
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
+        with:
+          header: beautiful-water-pr-preview
+          message: |
+            **PR preview:** publication failed.
+
+            [Open workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

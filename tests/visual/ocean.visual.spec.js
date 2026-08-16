@@ -117,8 +117,18 @@ const views = [
 ];
 
 const visualSuite = process.env.VISUAL_SUITE ?? 'all';
+const ciSceneNames = new Set([
+  'sun-facing-low',
+  'cross-sun-east',
+  'opposite-sun',
+  'top-down',
+  'repetition-wide-crosswind',
+  'underwater',
+  'underwater-fish-startled',
+]);
 const visualSuites = {
   all: views,
+  'ci-scene': views.filter((view) => ciSceneNames.has(view.name)),
   'scene-matrix': views.filter((view) => view.name !== 'underwater-fish-calm'),
   'fish-habituation': views.filter((view) => view.name === 'underwater-fish-calm'),
 };
@@ -126,9 +136,11 @@ if (!Object.hasOwn(visualSuites, visualSuite)) {
   throw new Error(`Unknown visual suite: ${visualSuite}`);
 }
 const captureViews = visualSuites[visualSuite];
+const fastCaptureSuite = visualSuite === 'ci-scene';
+const requiredCiSuite = ['ci-scene', 'fish-habituation'].includes(visualSuite);
 
-test('keeps a 4K display inside its adaptive render budget', async ({ page }, testInfo) => {
-  test.skip(visualSuite === 'fish-habituation', 'covered by the scene-matrix job');
+const fourKTest = ['all', 'scene-matrix'].includes(visualSuite) ? test : test.skip;
+fourKTest('keeps a 4K display inside its adaptive render budget', async ({ page }, testInfo) => {
   testInfo.setTimeout(5 * 60_000);
   await page.setViewportSize({ width: 3840, height: 2160 });
 
@@ -281,10 +293,10 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
   });
   const softwareRenderer = /basic render|llvmpipe|software|swiftshader|warp/i
     .test(graphicsRenderer);
-  if (softwareRenderer) testInfo.setTimeout(8 * 60_000);
-  // Hosted runners rasterize the first 1600 by 900 ocean frame on the CPU.
-  // Keep physical GPUs on an interactive budget while still bounding that
-  // deterministic software warm-up so a genuine infinite stall cannot pass.
+  if (softwareRenderer && !requiredCiSuite) testInfo.setTimeout(8 * 60_000);
+  // Hosted runners can rasterize the first ocean frame on the CPU. The full
+  // local harness permits that deterministic warm-up, while required CI
+  // suites retain the default one-minute test cap inside their two-minute job.
   const loaderFrameGapBudget = softwareRenderer ? 6_000 : 500;
   const loaderRuntime = await page.evaluate(() => ({
     trace: window.__LOADER_TRACE__,
@@ -365,7 +377,11 @@ test('capture ocean regression views', async ({ page }, testInfo) => {
     const captureTime = view.time ?? fixedTime;
     let diagnostics = await page.evaluate(
       (preset) => window.__WATER_HARNESS__.setView(preset),
-      { ...view, time: captureTime },
+      {
+        ...view,
+        time: captureTime,
+        renderPasses: fastCaptureSuite ? 1 : 2,
+      },
     );
     if (view.settle) {
       diagnostics = await page.evaluate(
