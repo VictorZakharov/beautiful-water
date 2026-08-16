@@ -60,6 +60,9 @@ jobs:
       - name: Verify Pages-safe asset paths
         run: bun run check:pages
 
+      - name: Test adaptive rendering policy
+        run: bun run quality:test
+
   visual-regression:
     name: Visual regression (${{ matrix.suite }})
     runs-on: windows-2022

@@ -127,6 +127,79 @@ if (!Object.hasOwn(visualSuites, visualSuite)) {
 }
 const captureViews = visualSuites[visualSuite];
 
+test('keeps a 4K display inside its adaptive render budget', async ({ page }, testInfo) => {
+  test.skip(visualSuite === 'fish-habituation', 'covered by the scene-matrix job');
+  testInfo.setTimeout(5 * 60_000);
+  await page.setViewportSize({ width: 3840, height: 2160 });
+
+  const browserErrors = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(`console: ${message.text()}`);
+  });
+  page.on('pageerror', (error) => browserErrors.push(`page: ${error.message}`));
+
+  await page.goto('/?harness=1&gpuClass=integrated', {
+    waitUntil: 'domcontentloaded',
+    timeout: 20_000,
+  });
+  await page.waitForFunction(
+    () => window.__WATER_HARNESS__?.ready === true,
+    undefined,
+    { timeout: 4 * 60_000 },
+  );
+  await page.addStyleTag({
+    content: '.loader, .fps { display: none !important; }',
+  });
+
+  const initial = await page.evaluate(() => window.__WATER_HARNESS__.getDiagnostics());
+  expect([initial.quality.width, initial.quality.height]).toEqual([3840, 2160]);
+  expect(initial.quality.gpuClass).toBe('integrated');
+  expect(initial.quality.renderPixels).toBeLessThanOrEqual(
+    initial.quality.pixelBudget * 1.002,
+  );
+  expect(initial.quality.renderPixels).toBeLessThan(3840 * 2160);
+  expect(initial.quality.canvasSize).toEqual([
+    initial.quality.drawingBufferWidth,
+    initial.quality.drawingBufferHeight,
+  ]);
+  expect(initial.quality.antialias).toBe(false);
+  expect(initial.quality.ocean.captureResolution).toBeLessThanOrEqual(640);
+  expect(initial.quality.ocean.reflectionSize).toEqual(
+    [initial.quality.ocean.captureResolution, initial.quality.ocean.captureResolution],
+  );
+  expect(initial.quality.ocean.refractionSize).toEqual(
+    [initial.quality.ocean.captureResolution, initial.quality.ocean.captureResolution],
+  );
+  expect(initial.quality.environment.shadowMapResolution).toBeLessThanOrEqual(1024);
+
+  const screenshotPath = path.join(outputDirectory, 'adaptive-4k.png');
+  await mkdir(outputDirectory, { recursive: true });
+  await page.screenshot({ path: screenshotPath, animations: 'disabled' });
+  await testInfo.attach('adaptive-4k', {
+    path: screenshotPath,
+    contentType: 'image/png',
+  });
+
+  const reduced = await page.evaluate(
+    () => window.__WATER_HARNESS__.samplePerformance({ fps: 8, samples: 7 }),
+  );
+  expect(reduced.quality.renderPixels).toBeLessThan(initial.quality.renderPixels);
+  expect(reduced.quality.pixelBudget).toBe(reduced.quality.minimumPixelBudget);
+  const recovering = await page.evaluate(
+    () => window.__WATER_HARNESS__.samplePerformance({ fps: 60, samples: 12 }),
+  );
+  expect(recovering.quality.renderPixels).toBeGreaterThan(reduced.quality.renderPixels);
+  expect(recovering.quality.renderPixels).toBeLessThanOrEqual(
+    recovering.quality.maximumPixelBudget * 1.002,
+  );
+
+  await writeFile(
+    path.join(outputDirectory, 'adaptive-4k.json'),
+    `${JSON.stringify({ initial, reduced, recovering }, null, 2)}\n`,
+  );
+  expect(browserErrors, browserErrors.join('\n')).toEqual([]);
+});
+
 test('capture ocean regression views', async ({ page }, testInfo) => {
   const waveCorrelations = [0, fixedTime, 29.5].map((time) => ({
     time,

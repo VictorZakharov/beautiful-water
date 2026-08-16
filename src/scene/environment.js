@@ -25,7 +25,11 @@ function createParticleTexture() {
   return texture;
 }
 
-export function createEnvironment(scene, sunDirection) {
+export function createEnvironment(
+  scene,
+  sunDirection,
+  { shadowMapResolution = 2048 } = {},
+) {
   const seabedUniforms = {
     uTime: { value: 0 },
     uSunDirection: { value: sunDirection },
@@ -287,7 +291,8 @@ export function createEnvironment(scene, sunDirection) {
   const sunLight = new THREE.DirectionalLight(0xffe2bc, 3.6);
   sunLight.position.copy(sunDirection).multiplyScalar(36);
   sunLight.castShadow = true;
-  sunLight.shadow.mapSize.set(2048, 2048);
+  let currentShadowMapResolution = shadowMapResolution;
+  sunLight.shadow.mapSize.set(shadowMapResolution, shadowMapResolution);
   sunLight.shadow.camera.left = -20;
   sunLight.shadow.camera.right = 20;
   sunLight.shadow.camera.top = 20;
@@ -299,6 +304,17 @@ export function createEnvironment(scene, sunDirection) {
 
   return {
     underwaterObjects: [seabed, rocks, grass],
+    setShadowMapResolution(resolution) {
+      const nextResolution = Math.max(512, Math.round(resolution));
+      if (nextResolution === currentShadowMapResolution) return;
+      currentShadowMapResolution = nextResolution;
+      sunLight.shadow.mapSize.set(nextResolution, nextResolution);
+      sunLight.shadow.map?.dispose();
+      sunLight.shadow.map = null;
+    },
+    getDiagnostics() {
+      return { shadowMapResolution: currentShadowMapResolution };
+    },
     update(time, underwaterMix) {
       seabedUniforms.uTime.value = time;
       seabedUniforms.uUnderwater.value = underwaterMix;
