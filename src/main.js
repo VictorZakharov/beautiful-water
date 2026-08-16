@@ -5,14 +5,14 @@ import {
   inspectGpu,
   shouldUseAntialias,
 } from './core/adaptive-quality.js';
+import { createRenderer, readRendererPreference } from './core/renderer.js';
 import { createBuoy } from './scene/buoy.js';
 import { createEnvironment, seabedHeight } from './scene/environment.js';
 import { createFishSchools } from './scene/fish.js';
-import { createOcean } from './scene/ocean.js';
-import { createSky } from './scene/sky.js';
-import { createUnderwaterRays } from './scene/underwater-rays.js';
+import { loadScenePipeline } from './scene/pipeline.js';
 import { sampleOceanSurface } from './scene/waves.js';
 import { createLoadingController } from './ui/loading.js';
+import { createRendererToggle } from './ui/renderer-toggle.js';
 
 const canvas = document.querySelector('#ocean-canvas');
 const app = document.querySelector('#app');
@@ -21,19 +21,26 @@ const query = new URLSearchParams(window.location.search);
 const harnessMode = query.has('harness');
 const loading = createLoadingController(app);
 loading.setStage(0.10, 'Building ocean surface');
+const preferredRenderer = readRendererPreference(query);
 
-const antialias = shouldUseAntialias({
+const requestedAntialias = shouldUseAntialias({
   width: window.innerWidth,
   height: window.innerHeight,
   devicePixelRatio: window.devicePixelRatio,
 });
+// The WebGPU screen-space refraction path samples the main color/depth target.
+// Keeping that target single-sampled avoids an invalid multisampled depth bind
+// and removes a costly full-resolution resolve on high-DPI integrated GPUs.
+const antialias = preferredRenderer === 'webgl' && requestedAntialias;
 
-const renderer = new THREE.WebGLRenderer({
+await loading.paint(0.16, preferredRenderer === 'webgpu' ? 'Starting WebGPU' : 'Starting WebGL');
+const rendererInfo = await createRenderer({
   canvas,
   antialias,
-  alpha: false,
-  powerPreference: 'high-performance',
+  preferredMode: preferredRenderer,
 });
+const renderer = rendererInfo.renderer;
+createRendererToggle(document.querySelector('[data-renderer-toggle]'), rendererInfo);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.90;
@@ -41,9 +48,10 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 // Keep shadow refreshes on an explicit cadence so the capture and main passes
 // reuse one atlas; the performance tier can safely refresh it every other frame.
-renderer.shadowMap.autoUpdate = false;
+if (rendererInfo.pipeline === 'webgl') renderer.shadowMap.autoUpdate = false;
 
 const gpu = inspectGpu(renderer, {
+  rendererName: rendererInfo.adapterName,
   deviceMemory: navigator.deviceMemory,
   hardwareConcurrency: navigator.hardwareConcurrency,
 });
@@ -61,8 +69,12 @@ const adaptiveQuality = createAdaptiveQuality({
 });
 const initialQuality = adaptiveQuality.getState();
 
+await loading.paint(0.24, 'Loading water pipeline');
+const scenePipeline = await loadScenePipeline(rendererInfo.pipeline);
+
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x063c48, 0.00001);
+const underwaterBackground = new THREE.Color(0x063c48);
 
 const camera = new THREE.PerspectiveCamera(51, 1, 0.08, 520);
 camera.position.set(7.8, 3.65, 10.8);
@@ -84,22 +96,37 @@ controls.addEventListener('start', () => app.classList.add('is-orbiting'));
 controls.addEventListener('end', () => app.classList.remove('is-orbiting'));
 
 const sunDirection = new THREE.Vector3(-0.58, 0.10, -0.81).normalize();
-const sky = createSky(scene, sunDirection);
-const ocean = createOcean({
-  renderer,
-  scene,
-  camera,
-  sunDirection,
-  sky,
-  sun: sky.sun,
-  captureResolution: initialQuality.captureResolution,
-});
+const surfaceSegments = gpuClass === 'discrete'
+  ? 300
+  : gpuClass === 'unknown'
+    ? 240
+    : rendererInfo.pipeline === 'webgpu' ? 180 : 210;
+const sky = scenePipeline.createSky(scene, sunDirection);
+const ocean = rendererInfo.pipeline === 'webgpu'
+  ? scenePipeline.createOcean({
+    renderer,
+    scene,
+    sunDirection,
+    captureResolution: initialQuality.captureResolution,
+    surfaceSegments,
+  })
+  : scenePipeline.createOcean({
+    renderer,
+    scene,
+    camera,
+    sunDirection,
+    sky,
+    sun: sky.sun,
+    captureResolution: initialQuality.captureResolution,
+    surfaceSegments,
+  });
 const environment = createEnvironment(scene, sunDirection, {
   shadowMapResolution: initialQuality.shadowMapResolution,
+  rendererMode: rendererInfo.pipeline,
 });
 const fishSchools = createFishSchools(scene);
-const buoy = createBuoy(scene, sunDirection);
-const underwaterRays = createUnderwaterRays(sunDirection);
+const buoy = createBuoy(scene, sunDirection, { rendererMode: rendererInfo.pipeline });
+const underwaterRays = scenePipeline.createUnderwaterRays(sunDirection);
 const underwaterWorld = [
   ...environment.underwaterObjects,
   ...fishSchools.underwaterObjects,
@@ -118,6 +145,7 @@ function applyRenderQuality() {
   ocean.setCaptureResolution(quality.captureResolution);
   environment.setShadowMapResolution(quality.shadowMapResolution);
   renderer.shadowMap.needsUpdate = true;
+  environment.requestShadowUpdate();
   underwaterRays.resize(quality.width, quality.height);
   camera.aspect = quality.width / quality.height;
   camera.updateProjectionMatrix();
@@ -180,11 +208,13 @@ function updateFrameState(elapsed) {
   underwaterRays.update(elapsed, underwaterMix, camera);
 
   scene.fog.density = THREE.MathUtils.lerp(0.0017, 0.038, underwaterMix);
+  scene.background = underwaterMix > 0.5 ? underwaterBackground : null;
   renderer.toneMappingExposure = THREE.MathUtils.lerp(0.90, 0.76, underwaterMix);
   app.classList.toggle('is-underwater', underwaterMix > 0.5);
 }
 
 function renderOceanCaptures(pass = 'both') {
+  if (!ocean.usesManualCaptures) return;
   underwaterWorld.forEach((object) => { object.visible = true; });
   if (underwaterMix < 0.65) {
     if (pass === 'reflection') {
@@ -213,6 +243,7 @@ function renderFrame(elapsed) {
   const quality = adaptiveQuality.getState();
   if (renderedFrames % quality.shadowFrameInterval === 0) {
     renderer.shadowMap.needsUpdate = true;
+    environment.requestShadowUpdate();
   }
   updateFrameState(elapsed);
   renderOceanCaptures();
@@ -243,6 +274,7 @@ async function start() {
   updateFrameState(initialTime);
   await loading.paint(0.70, 'Warming reflection');
   renderer.shadowMap.needsUpdate = true;
+  environment.requestShadowUpdate();
   renderOceanCaptures('reflection');
   await loading.paint(0.82, 'Warming refraction');
   renderOceanCaptures('refraction');
@@ -272,13 +304,20 @@ async function start() {
         underwater: underwaterMix > 0.5,
         drawCalls: lastFrameDiagnostics.drawCalls,
         triangles: lastFrameDiagnostics.triangles,
-        programs: renderer.info.programs?.length ?? 0,
+        programs: renderer.info.programs?.length ?? (lastFrameDiagnostics.drawCalls > 0 ? 1 : 0),
         quality: {
           ...quality,
-          antialias: renderer.getContext().getContextAttributes().antialias,
+          antialias,
           canvasSize: [renderer.domElement.width, renderer.domElement.height],
           ocean: ocean.getDiagnostics(),
           environment: environment.getDiagnostics(),
+        },
+        renderer: {
+          preferred: preferredRenderer,
+          pipeline: rendererInfo.pipeline,
+          backend: rendererInfo.backend,
+          adapter: rendererInfo.adapterName,
+          fallbackReason: rendererInfo.fallbackReason,
         },
         controls: {
           orbitPivot: 'buoy',

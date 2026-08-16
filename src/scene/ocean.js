@@ -12,6 +12,7 @@ export function createOcean({
   sky,
   sun,
   captureResolution = window.innerWidth < 720 ? 512 : 768,
+  surfaceSegments = window.innerWidth < 720 ? 210 : 300,
 }) {
   const noiseTexture = createNoiseTexture();
   const uniforms = {
@@ -41,7 +42,6 @@ export function createOcean({
   // The extra tessellation is reserved for desktop where the medium wave
   // bands are visible. Mobile keeps the lighter mesh and still receives all
   // fragment-level capillary detail.
-  const surfaceSegments = window.innerWidth < 720 ? 210 : 300;
   const geometry = new THREE.PlaneGeometry(
     420,
     420,
@@ -172,6 +172,7 @@ export function createOcean({
   return {
     mesh,
     uniforms,
+    usesManualCaptures: true,
     compileCaptures,
     renderReflectionCapture,
     renderRefractionCapture,
@@ -190,6 +191,8 @@ export function createOcean({
         captureResolution: currentCaptureResolution,
         reflectionSize: [reflectionTarget.width, reflectionTarget.height],
         refractionSize: [refractionTarget.width, refractionTarget.height],
+        surfaceSegments,
+        captureStrategy: 'reflector-refractor',
       };
     },
     update(time, underwaterMix) {
