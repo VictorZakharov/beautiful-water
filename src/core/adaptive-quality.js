@@ -9,7 +9,8 @@ export const GPU_PIXEL_BUDGETS = Object.freeze({
 
 const SOFTWARE_RENDERER = /basic render|llvmpipe|software|swiftshader|warp/i;
 const DISCRETE_RENDERER = /\b(?:nvidia|geforce|quadro|rtx|gtx|radeon\s+(?:rx|pro)|intel\s+arc)\b/i;
-const INTEGRATED_RENDERER = /\b(?:intel|iris|uhd|hd graphics|vega|radeon\(tm\) graphics|amd radeon graphics|adreno|mali|powervr)\b/i;
+const APPLE_HIGH_END_RENDERER = /\bapple\s+m\d+\s+(?:max|ultra)\b/i;
+const INTEGRATED_RENDERER = /\b(?:intel|iris|uhd|hd graphics|vega|radeon\(tm\) graphics|amd radeon graphics|adreno|mali|powervr|apple)\b/i;
 
 function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
@@ -22,7 +23,10 @@ function cappedDevicePixelRatio(width, devicePixelRatio) {
 
 export function classifyGpu(rendererName = '', hints = {}) {
   if (SOFTWARE_RENDERER.test(rendererName)) return 'software';
-  if (DISCRETE_RENDERER.test(rendererName)) return 'discrete';
+  if (
+    DISCRETE_RENDERER.test(rendererName)
+    || APPLE_HIGH_END_RENDERER.test(rendererName)
+  ) return 'discrete';
   if (INTEGRATED_RENDERER.test(rendererName)) return 'integrated';
   if ((hints.deviceMemory ?? 8) <= 4 || (hints.hardwareConcurrency ?? 8) <= 4) {
     return 'integrated';
