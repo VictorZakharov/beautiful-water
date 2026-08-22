@@ -5,6 +5,7 @@ import {
   inspectGpu,
   shouldUseAntialias,
 } from './core/adaptive-quality.js';
+import { createGpuFrameTimer } from './core/gpu-frame-timer.js';
 import { createRenderer, readRendererPreference } from './core/renderer.js';
 import { createBuoy } from './scene/buoy.js';
 import { createEnvironment, seabedHeight } from './scene/environment.js';
@@ -17,6 +18,7 @@ import { createRendererToggle } from './ui/renderer-toggle.js';
 const canvas = document.querySelector('#ocean-canvas');
 const app = document.querySelector('#app');
 const fpsValue = document.querySelector('[data-fps]');
+const gpuFpsValue = document.querySelector('[data-gpu-fps]');
 const query = new URLSearchParams(window.location.search);
 const harnessMode = query.has('harness');
 const loading = createLoadingController(app);
@@ -68,6 +70,7 @@ const adaptiveQuality = createAdaptiveQuality({
   rendererName: gpu.renderer,
 });
 const initialQuality = adaptiveQuality.getState();
+const gpuFrameTimer = createGpuFrameTimer(renderer);
 
 await loading.paint(0.24, 'Loading water pipeline');
 const scenePipeline = await loadScenePipeline(rendererInfo.pipeline);
@@ -244,14 +247,19 @@ function renderScene() {
 }
 
 function renderFrame(elapsed) {
-  const quality = adaptiveQuality.getState();
-  if (renderedFrames % quality.shadowFrameInterval === 0) {
-    renderer.shadowMap.needsUpdate = true;
-    environment.requestShadowUpdate();
+  gpuFrameTimer.beginFrame();
+  try {
+    const quality = adaptiveQuality.getState();
+    if (renderedFrames % quality.shadowFrameInterval === 0) {
+      renderer.shadowMap.needsUpdate = true;
+      environment.requestShadowUpdate();
+    }
+    updateFrameState(elapsed);
+    renderOceanCaptures();
+    renderScene();
+  } finally {
+    gpuFrameTimer.endFrame();
   }
-  updateFrameState(elapsed);
-  renderOceanCaptures();
-  renderScene();
   renderedFrames += 1;
 }
 
@@ -264,6 +272,10 @@ function updateFps() {
   const measuredFps = (fpsFrames * 1000) / sampleDuration;
   smoothedFps = THREE.MathUtils.lerp(smoothedFps, measuredFps, 0.42);
   fpsValue.textContent = String(Math.round(smoothedFps));
+  const gpuCapacity = gpuFrameTimer.getState().capacityFps;
+  gpuFpsValue.textContent = Number.isFinite(gpuCapacity)
+    ? String(Math.round(gpuCapacity))
+    : '--';
   fpsFrames = 0;
   fpsSampleStart = now;
 }
@@ -333,6 +345,7 @@ async function start() {
           adapter: rendererInfo.adapterName,
           fallbackReason: rendererInfo.fallbackReason,
         },
+        performance: gpuFrameTimer.getState(),
         controls: {
           orbitPivot: 'buoy',
           panEnabled: controls.enablePan,
