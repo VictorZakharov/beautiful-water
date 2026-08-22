@@ -33,12 +33,15 @@ test('profile live renderer capacity', async ({ page }, testInfo) => {
     { label: '1440p', width: 2560, height: 1440 },
     { label: '4K', width: 3840, height: 2160 },
   ];
+  const profileView = process.env.PERFORMANCE_VIEW === 'underwater'
+    ? { label: 'underwater', query: '&profileView=underwater' }
+    : { label: 'surface', query: '' };
   const reports = [];
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     for (const mode of ['webgl', 'webgpu']) {
       const startupStart = Date.now();
-      await page.goto(`/?renderer=${mode}`, {
+      await page.goto(`/?renderer=${mode}${profileView.query}`, {
         waitUntil: 'domcontentloaded',
         timeout: 20_000,
       });
@@ -82,9 +85,12 @@ test('profile live renderer capacity', async ({ page }, testInfo) => {
           displayedFps: Number(
             document.querySelector('[data-fps]')?.textContent ?? 0,
           ),
+          underwater: document.querySelector('#app')?.classList
+            .contains('is-underwater') ?? false,
         };
       }, startupMs);
       report.label = viewport.label;
+      report.view = profileView.label;
       reports.push(report);
     }
   }
@@ -96,7 +102,7 @@ test('profile live renderer capacity', async ({ page }, testInfo) => {
   );
   for (const report of reports) {
     testInfo.annotations.push({
-      type: `${report.label} GPU capacity (${report.pipeline})`,
+      type: `${report.label} ${report.view} GPU capacity (${report.pipeline})`,
       description: `${report.gpuCapacityFps.toFixed(0)} FPS`,
     });
     const viewport = viewports.find(({ label }) => label === report.label);
@@ -106,6 +112,7 @@ test('profile live renderer capacity', async ({ page }, testInfo) => {
     );
     expect(report.measuredFps).toBeGreaterThan(0);
     expect(report.gpuCapacityFps).toBeGreaterThan(0);
+    expect(report.underwater).toBe(report.view === 'underwater');
   }
   expect(reports.map(({ pipeline }) => pipeline)).toEqual([
     'webgl', 'webgpu',

@@ -9,6 +9,7 @@ import {
   mix,
   pow,
   smoothstep,
+  texture,
   uniform,
   uv,
   vec2,
@@ -94,17 +95,47 @@ export function createWebGpuUnderwaterRays(sunDirection) {
     depthTest: false,
     depthWrite: false,
     toneMapped: false,
-    blending: THREE.NormalBlending,
+    blending: THREE.NoBlending,
   });
   material.name = 'WebGPU underwater sun rays';
   material.colorNode = rayOutput.rgb;
   material.opacityNode = rayOutput.a;
+
+  // These rays are deliberately broad and tolerate linear upsampling. Running
+  // their eight noise reads at half width/height cuts the heavy pass by 75%.
+  const raysTarget = new THREE.RenderTarget(1, 1, {
+    depthBuffer: false,
+    stencilBuffer: false,
+  });
+  raysTarget.texture.name = 'WebGPU underwater rays half-resolution target';
+  raysTarget.texture.generateMipmaps = false;
+  raysTarget.texture.minFilter = THREE.LinearFilter;
+  raysTarget.texture.magFilter = THREE.LinearFilter;
 
   const overlayScene = new THREE.Scene();
   const overlayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
   quad.frustumCulled = false;
   overlayScene.add(quad);
+
+  const compositeSample = texture(raysTarget.texture, uv());
+  const compositeMaterial = new MeshBasicNodeMaterial({
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.NormalBlending,
+  });
+  compositeMaterial.name = 'WebGPU underwater sun rays composite';
+  compositeMaterial.colorNode = compositeSample.rgb;
+  compositeMaterial.opacityNode = compositeSample.a;
+  const compositeScene = new THREE.Scene();
+  const compositeQuad = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 2),
+    compositeMaterial,
+  );
+  compositeQuad.frustumCulled = false;
+  compositeScene.add(compositeQuad);
 
   const eta = 1 / 1.333;
   const horizontal = new THREE.Vector2(sunDirection.x, sunDirection.z).multiplyScalar(eta);
@@ -115,11 +146,16 @@ export function createWebGpuUnderwaterRays(sunDirection) {
   ).normalize();
   const sunPoint = new THREE.Vector3();
   const cameraForward = new THREE.Vector3();
+  const clearColor = new THREE.Color();
   let strength = 0;
 
   return {
     resize(width, height) {
       aspectNode.value = width / Math.max(height, 1);
+      raysTarget.setSize(
+        Math.max(1, Math.ceil(width * 0.5)),
+        Math.max(1, Math.ceil(height * 0.5)),
+      );
     },
     update(time, underwaterMix, camera) {
       camera.getWorldDirection(cameraForward);
@@ -139,9 +175,18 @@ export function createWebGpuUnderwaterRays(sunDirection) {
     },
     render(renderer) {
       if (strength < 0.002) return;
+      const renderTarget = renderer.getRenderTarget();
       const autoClear = renderer.autoClear;
+      renderer.getClearColor(clearColor);
+      const clearAlpha = renderer.getClearAlpha();
       renderer.autoClear = false;
+      renderer.setRenderTarget(raysTarget);
+      renderer.setClearColor(0x000000, 0);
+      renderer.clear(true, false, false);
       renderer.render(overlayScene, overlayCamera);
+      renderer.setRenderTarget(renderTarget);
+      renderer.setClearColor(clearColor, clearAlpha);
+      renderer.render(compositeScene, overlayCamera);
       renderer.autoClear = autoClear;
     },
   };

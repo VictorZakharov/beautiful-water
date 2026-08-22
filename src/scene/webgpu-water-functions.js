@@ -157,13 +157,24 @@ export function microGradientNode(
   const fineDistanceFade = float(1).sub(smoothstep(20, 92, distanceToCamera));
   const footprint = max(dFdx(position).length(), dFdy(position).length());
   const fineFootprintFade = float(1).sub(smoothstep(0.025, 0.19, footprint));
-  const epsilon = 0.028;
+  // Recover the world-space height gradient from screen-space derivatives.
+  // This evaluates the five-sample micro height once instead of four times
+  // for central differences, removing 15 texture reads per water fragment.
+  const positionDx = dFdx(position);
+  const positionDy = dFdy(position);
+  const microHeight = microHeightNode(position, timeNode, noiseMap);
+  const heightDx = dFdx(microHeight);
+  const heightDy = dFdy(microHeight);
+  const determinant = positionDx.x.mul(positionDy.y)
+    .sub(positionDx.y.mul(positionDy.x));
+  const inverseDeterminant = determinant.div(max(
+    determinant.mul(determinant),
+    0.00000001,
+  ));
   const noiseGradient = vec2(
-    microHeightNode(position.add(vec2(epsilon, 0)), timeNode, noiseMap)
-      .sub(microHeightNode(position.sub(vec2(epsilon, 0)), timeNode, noiseMap)),
-    microHeightNode(position.add(vec2(0, epsilon)), timeNode, noiseMap)
-      .sub(microHeightNode(position.sub(vec2(0, epsilon)), timeNode, noiseMap)),
-  ).div(2 * epsilon);
+    heightDx.mul(positionDy.y).sub(positionDx.y.mul(heightDy)),
+    positionDx.x.mul(heightDy).sub(heightDx.mul(positionDy.x)),
+  ).mul(inverseDeterminant);
   return coarse.mul(coarseFade)
     .add(medium.mul(mediumFade))
     .add(fine.mul(fineDistanceFade).mul(fineFootprintFade))

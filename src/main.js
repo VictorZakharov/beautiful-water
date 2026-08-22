@@ -99,6 +99,14 @@ controls.maxPolarAngle = Math.PI - 0.055;
 controls.zoomToCursor = false;
 controls.update();
 
+// Keep the live timing profiler on the animation loop while selecting a
+// deterministic medium; harness mode renders only on explicit test calls.
+if (!harnessMode && query.get('profileView') === 'underwater') {
+  camera.position.set(7.5, -2.15, 9.8);
+  controls.target.set(0, -1.75, 0);
+  controls.update();
+}
+
 controls.addEventListener('start', () => app.classList.add('is-orbiting'));
 controls.addEventListener('end', () => app.classList.remove('is-orbiting'));
 
@@ -153,7 +161,7 @@ function applyRenderQuality() {
   environment.setShadowMapResolution(quality.shadowMapResolution);
   renderer.shadowMap.needsUpdate = true;
   environment.requestShadowUpdate();
-  underwaterRays.resize(quality.width, quality.height);
+  underwaterRays.resize(quality.drawingBufferWidth, quality.drawingBufferHeight);
   camera.aspect = quality.width / quality.height;
   camera.updateProjectionMatrix();
 }

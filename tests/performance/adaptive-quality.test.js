@@ -8,6 +8,9 @@ import {
 describe('GPU classification', () => {
   test('recognizes common integrated, discrete, and software renderers', () => {
     expect(classifyGpu('ANGLE (Intel, Intel(R) UHD Graphics 630)')).toBe('integrated');
+    expect(classifyGpu('Apple')).toBe('integrated');
+    expect(classifyGpu('Apple M1 Pro')).toBe('integrated');
+    expect(classifyGpu('Apple M1 Max')).toBe('discrete');
     expect(classifyGpu('ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Ti)')).toBe('discrete');
     expect(classifyGpu('nvidia lovelace')).toBe('discrete');
     expect(classifyGpu('ANGLE (Microsoft, Microsoft Basic Render Driver)')).toBe('software');

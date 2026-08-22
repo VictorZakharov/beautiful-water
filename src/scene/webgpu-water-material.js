@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import {
   Fn,
+  If,
   abs,
   cameraPosition,
   clamp,
@@ -102,6 +103,11 @@ export function createWebGpuWaterMaterial({
     );
     const nearField = float(1).sub(smoothstep(18, 115, distanceToCamera));
 
+    // The medium blend eases for several frames when crossing the waterline.
+    // Shade both sides only during that transition; settled frames otherwise
+    // spent most of their fragment work on a color that was blended away.
+    const surfaceOutput = vec3(0).toVar();
+    If(underwaterNode.lessThan(0.98), () => {
     const waterColumn = float(3.55).div(max(viewFacing, 0.28));
     const opticalDepth = clamp(
       float(1).sub(exp(waterColumn.mul(-0.052)))
@@ -442,7 +448,11 @@ export function createWebGpuWaterMaterial({
       vec3(0.043, 0.204, 0.298),
       horizonFade.mul(horizonAbsorption),
     ));
+    surfaceOutput.assign(surfaceColor);
+    });
 
+    const underwaterOutput = vec3(0).toVar();
+    If(underwaterNode.greaterThan(0.02), () => {
     const ceilingTexture = smoothstep(
       0.42,
       0.83,
@@ -483,7 +493,11 @@ export function createWebGpuWaterMaterial({
       vec3(0.0015, 0.035, 0.060),
       underwaterFog.mul(0.70),
     ));
-    return mix(surfaceColor, underwaterColor, underwaterNode);
+    underwaterOutput.assign(underwaterColor);
+    });
+
+    const mediumBlend = clamp(underwaterNode.sub(0.02).div(0.96), 0, 1);
+    return mix(surfaceOutput, underwaterOutput, mediumBlend);
   })();
 
   return { material, reflectionSampler };
