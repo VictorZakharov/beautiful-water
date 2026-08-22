@@ -76,6 +76,35 @@ describe('adaptive pixel budget', () => {
     expect([quality.drawingBufferWidth, quality.drawingBufferHeight]).toEqual([1920, 1080]);
   });
 
+  test('locks a native 4K benchmark at the high quality tier', () => {
+    const quality = createAdaptiveQuality({
+      width: 3840,
+      height: 2160,
+      devicePixelRatio: 1,
+      gpuClass: 'discrete',
+      lockedPixelRatio: 1,
+    });
+    const initial = quality.getState();
+
+    expect(initial).toMatchObject({
+      locked: true,
+      tier: 'high',
+      pixelRatio: 1,
+      renderScale: 1,
+      drawingBufferWidth: 3840,
+      drawingBufferHeight: 2160,
+      renderPixels: 8_294_400,
+      captureResolution: 768,
+      shadowMapResolution: 2048,
+      shadowFrameInterval: 1,
+    });
+
+    for (let sample = 0; sample < 12; sample += 1) {
+      expect(quality.sampleFrameRate(8)).toBe(false);
+    }
+    expect(quality.getState()).toEqual(initial);
+  });
+
   test('warms up 4K conservatively and raises quality only after fast samples', () => {
     const controller = createAdaptiveQuality({
       width: 3840,

@@ -22,6 +22,8 @@ const gpuP50Value = document.querySelector('[data-gpu-p50]');
 const gpuP95Value = document.querySelector('[data-gpu-p95]');
 const query = new URLSearchParams(window.location.search);
 const harnessMode = query.has('harness');
+const nativeSustainProfile = !harnessMode
+  && query.get('sustain') === 'native-4k';
 const loading = createLoadingController(app);
 loading.setStage(0.10, 'Building ocean surface');
 const preferredRenderer = readRendererPreference(query);
@@ -69,6 +71,7 @@ const adaptiveQuality = createAdaptiveQuality({
   devicePixelRatio: window.devicePixelRatio,
   gpuClass,
   rendererName: gpu.renderer,
+  lockedPixelRatio: nativeSustainProfile ? 1 : null,
 });
 const initialQuality = adaptiveQuality.getState();
 const gpuFrameTimer = createGpuFrameTimer(renderer);
@@ -182,13 +185,20 @@ document.addEventListener('visibilitychange', () => {
   gpuFrameTimer.reset();
 });
 let rendererDisposed = false;
-window.addEventListener('pagehide', (event) => {
-  if (event.persisted || rendererDisposed) return;
+function disposeRenderer() {
+  if (rendererDisposed) return;
   rendererDisposed = true;
   renderer.setAnimationLoop(null);
   gpuFrameTimer.dispose();
   controls.dispose();
-  renderer.dispose();
+  // Native-4K WebGPU targets can block indefinitely in Three.js dispose()
+  // while Chromium is already tearing down the document and GPU context.
+  // Stop all producers here and let navigation release the WebGPU backend.
+  if (!renderer.isWebGPURenderer) renderer.dispose();
+}
+window.addEventListener('pagehide', (event) => {
+  if (event.persisted) return;
+  disposeRenderer();
 });
 resize();
 
@@ -202,6 +212,35 @@ let harnessUnderwaterRaysEnabled = true;
 let lastFrameDiagnostics = { drawCalls: 0, triangles: 0 };
 let cameraIsUnderwater = false;
 let renderedFrames = 0;
+const sustainCpuFrameTimes = [];
+
+function getSustainDiagnostics() {
+  return {
+    ready: nativeSustainProfile
+      && window.__WATER_PERFORMANCE__?.ready === true,
+    canvasSize: [renderer.domElement.width, renderer.domElement.height],
+    quality: adaptiveQuality.getState(),
+    gpu: gpuFrameTimer.getState(),
+    cpuFrameTimes: [...sustainCpuFrameTimes],
+    renderedFrames,
+  };
+}
+
+if (nativeSustainProfile) {
+  window.__WATER_PERFORMANCE__ = {
+    ready: false,
+    resetMeasurement() {
+      sustainCpuFrameTimes.length = 0;
+      gpuFrameTimer.reset();
+      return getSustainDiagnostics();
+    },
+    getDiagnostics: getSustainDiagnostics,
+    dispose() {
+      this.ready = false;
+      disposeRenderer();
+    },
+  };
+}
 
 function updateFrameState(elapsed) {
   if (!harnessMode) {
@@ -420,13 +459,21 @@ async function start() {
     window.__WATER_HARNESS__.ready = true;
   } else {
     renderer.setAnimationLoop((timestamp) => {
+      const cpuFrameStart = nativeSustainProfile ? performance.now() : 0;
       if (!document.hidden && adaptiveQuality.observeFrame(timestamp)) {
         applyRenderQuality();
       }
       timer.update();
       renderFrame(timer.getElapsed());
       updateFps();
+      if (nativeSustainProfile) {
+        sustainCpuFrameTimes.push(performance.now() - cpuFrameStart);
+        if (sustainCpuFrameTimes.length > 20_000) {
+          sustainCpuFrameTimes.shift();
+        }
+      }
     });
+    if (nativeSustainProfile) window.__WATER_PERFORMANCE__.ready = true;
   }
 }
 
