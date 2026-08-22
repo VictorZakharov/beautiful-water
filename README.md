@@ -58,7 +58,8 @@ refining the `eh` estimator while the live demo remains available for direct vis
 - Three procedural fish schools with separation, alignment, cohesion, depth avoidance,
   curiosity, habituation, and escape responses to a moving underwater camera.
 - Above-water and underwater rendering states reached continuously by orbiting through the
-  animated surface, plus a responsive loading screen and FPS counter.
+  animated surface, plus a responsive loading screen and separate GPU-capacity and presented-FPS
+  readouts.
 - GPU-aware render budgets, high-density antialiasing policy, and frame-time adaptation keep
   4K displays practical without changing the CSS resolution or the default 1080p presentation.
 - Native WebGPU/TSL and legacy WebGL/GLSL water pipelines share the same wave spectrum, scene,
@@ -108,14 +109,15 @@ wasting software-GPU time on intermediate frames. Coverage includes:
 ```bash
 bun run visual:test
 bun run quality:test
-# Optional side-by-side WebGL/WebGPU 4K startup and FPS profile
+# Optional WebGL/WebGPU 1080p, 1440p, and 4K GPU-capacity profile
 # (not used as a hardware-dependent CI gate)
 bun run performance:profile
 ```
 
 Screenshots, side-by-side composites, pixel metrics, camera and renderer diagnostics,
 wave-correlation measurements, and startup timing are written to `visual-results/`. The optional
-profile adds both renderer measurements to `runtime-4k.json`. Set
+profile adds presented FPS plus uncapped GPU-capacity measurements to
+`runtime-capacity.json`. Set
 `PLAYWRIGHT_CHROMIUM_PATH` when Chrome or Edge is not in a standard location.
 
 ## Production and GitHub Pages

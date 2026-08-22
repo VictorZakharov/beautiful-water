@@ -111,6 +111,20 @@ body {
   letter-spacing: 0.22em;
 }
 
+.fps small {
+  margin-top: 7px;
+  color: rgb(211 236 236 / 48%);
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fps small b {
+  color: rgb(211 236 236 / 72%);
+  font-variant-numeric: tabular-nums;
+}
+
 .renderer-toggle {
   position: absolute;
   top: clamp(12px, 2vw, 24px);

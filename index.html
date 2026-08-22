@@ -28,9 +28,14 @@
         aria-label="Animated open ocean with a floating red navigation buoy"
       ></canvas>
       <div class="vignette" aria-hidden="true"></div>
-      <output class="fps" aria-label="Frames per second">
-        <strong data-fps>--</strong>
-        <span>FPS</span>
+      <output
+        class="fps"
+        aria-label="Rendering performance"
+        title="GPU capacity uses hardware frame time; presented FPS follows display refresh"
+      >
+        <strong data-gpu-fps>--</strong>
+        <span>GPU FPS CAPACITY</span>
+        <small><b data-fps>--</b> presented</small>
       </output>
       <div class="renderer-toggle" data-renderer-toggle hidden>
         <span class="renderer-toggle__status" data-renderer-status></span>
