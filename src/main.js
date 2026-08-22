@@ -6,6 +6,11 @@ import {
   shouldUseAntialias,
 } from './core/adaptive-quality.js';
 import { createGpuFrameTimer } from './core/gpu-frame-timer.js';
+import {
+  createHistoryPath,
+  createPresentationMonitor,
+  formatPerformanceReport,
+} from './core/presentation-monitor.js';
 import { createRenderer, readRendererPreference } from './core/renderer.js';
 import { createBuoy } from './scene/buoy.js';
 import { createEnvironment, seabedHeight } from './scene/environment.js';
@@ -20,6 +25,12 @@ const app = document.querySelector('#app');
 const fpsValue = document.querySelector('[data-fps]');
 const gpuP50Value = document.querySelector('[data-gpu-p50]');
 const gpuP95Value = document.querySelector('[data-gpu-p95]');
+const performancePanel = document.querySelector('[data-performance-panel]');
+const fpsHistory = document.querySelector('[data-fps-history]');
+const fpsHistoryLine = document.querySelector('[data-fps-history-line]');
+const fpsAverageValue = document.querySelector('[data-fps-average]');
+const fpsLowValue = document.querySelector('[data-fps-low]');
+const performanceCopyLabel = document.querySelector('[data-performance-copy]');
 const query = new URLSearchParams(window.location.search);
 const harnessMode = query.has('harness');
 const nativeSustainProfile = !harnessMode
@@ -75,6 +86,7 @@ const adaptiveQuality = createAdaptiveQuality({
 });
 const initialQuality = adaptiveQuality.getState();
 const gpuFrameTimer = createGpuFrameTimer(renderer);
+const presentationMonitor = createPresentationMonitor();
 
 await loading.paint(0.24, 'Loading water pipeline');
 const scenePipeline = await loadScenePipeline(rendererInfo.pipeline);
@@ -183,6 +195,12 @@ window.addEventListener('resize', resize, { passive: true });
 document.addEventListener('visibilitychange', () => {
   adaptiveQuality.resetFrameSampling();
   gpuFrameTimer.reset();
+  presentationMonitor.reset();
+  fpsFrames = 0;
+  fpsSampleStart = performance.now();
+  smoothedFps = null;
+  fpsValue.textContent = '--';
+  fpsHistoryLine.setAttribute('d', '');
 });
 let rendererDisposed = false;
 function disposeRenderer() {
@@ -205,7 +223,8 @@ resize();
 let underwaterMix = 0;
 let fpsFrames = 0;
 let fpsSampleStart = performance.now();
-let smoothedFps = 60;
+let smoothedFps = null;
+let latestPresentation = presentationMonitor.getState();
 let harnessTime = 11.75;
 let harnessUnderwaterMix = null;
 let harnessUnderwaterRaysEnabled = true;
@@ -324,15 +343,41 @@ function renderFrame(elapsed) {
   renderedFrames += 1;
 }
 
-function updateFps() {
+function formatHudFps(fps) {
+  if (!Number.isFinite(fps)) return '--';
+  return fps < 20 ? fps.toFixed(1) : String(Math.round(fps));
+}
+
+function updatePresentationHud(presentation) {
+  const targetFps = presentation.refreshRateFps
+    ?? Math.max(60, presentation.averageFps ?? 0);
+  fpsHistoryLine.setAttribute('d', createHistoryPath(
+    presentation.series,
+    { targetFps },
+  ));
+  fpsAverageValue.textContent = formatHudFps(presentation.averageFps);
+  fpsLowValue.textContent = formatHudFps(presentation.onePercentLowFps);
+  fpsHistory.setAttribute(
+    'aria-label',
+    `Presented FPS over the last ${(presentation.windowElapsedMs / 1000).toFixed(1)} seconds: ${formatHudFps(presentation.averageFps)} average, ${formatHudFps(presentation.onePercentLowFps)} one-percent low`,
+  );
+  const hasFrameDrop = presentation.windowElapsedMs >= 2_000
+    && Number.isFinite(presentation.worstOneSecondFps)
+    && Number.isFinite(presentation.refreshRateFps)
+    && presentation.worstOneSecondFps < presentation.refreshRateFps * 0.75;
+  performancePanel.classList.toggle('has-frame-drop', hasFrameDrop);
+}
+
+function updateFps(now = performance.now()) {
   fpsFrames += 1;
-  const now = performance.now();
   const sampleDuration = now - fpsSampleStart;
   if (sampleDuration < 500) return;
 
   const measuredFps = (fpsFrames * 1000) / sampleDuration;
-  smoothedFps = THREE.MathUtils.lerp(smoothedFps, measuredFps, 0.42);
-  fpsValue.textContent = String(Math.round(smoothedFps));
+  smoothedFps = Number.isFinite(smoothedFps)
+    ? THREE.MathUtils.lerp(smoothedFps, measuredFps, 0.42)
+    : measuredFps;
+  fpsValue.textContent = formatHudFps(smoothedFps);
   const gpuTiming = gpuFrameTimer.getState();
   const formatGpuTime = (frameTimeMs) => (
     Number.isFinite(frameTimeMs)
@@ -345,9 +390,84 @@ function updateFps() {
   gpuP95Value.textContent = gpuTiming.ready
     ? formatGpuTime(gpuTiming.p95FrameTimeMs)
     : '--';
+  latestPresentation = presentationMonitor.getState(now);
+  updatePresentationHud(latestPresentation);
   fpsFrames = 0;
   fpsSampleStart = now;
 }
+
+function createClipboardFallback(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  document.body.append(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  const copied = document.execCommand('copy');
+  textarea.remove();
+  if (!copied) throw new Error('Clipboard copy was rejected');
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  createClipboardFallback(text);
+}
+
+function buildPerformanceReport() {
+  latestPresentation = presentationMonitor.getState(performance.now());
+  const quality = adaptiveQuality.getState();
+  return formatPerformanceReport({
+    capturedAt: new Date().toISOString(),
+    presentation: latestPresentation,
+    gpu: gpuFrameTimer.getState(),
+    renderer: {
+      pipeline: rendererInfo.pipeline,
+      backend: rendererInfo.backend,
+      adapter: rendererInfo.adapterName ?? gpu.renderer,
+    },
+    canvas: {
+      drawingBufferWidth: renderer.domElement.width,
+      drawingBufferHeight: renderer.domElement.height,
+      cssWidth: window.innerWidth,
+      cssHeight: window.innerHeight,
+    },
+    quality,
+    scene: cameraIsUnderwater ? 'underwater' : 'surface',
+    drawCalls: lastFrameDiagnostics.drawCalls,
+    triangles: lastFrameDiagnostics.triangles,
+    pageState: {
+      visibility: document.visibilityState,
+      focused: document.hasFocus(),
+      devicePixelRatio: window.devicePixelRatio,
+    },
+    pageUrl: window.location.href,
+    userAgent: navigator.userAgent,
+  });
+}
+
+let copyFeedbackTimer = null;
+performancePanel.addEventListener('click', async () => {
+  try {
+    await copyText(buildPerformanceReport());
+    performancePanel.dataset.copyState = 'copied';
+    performanceCopyLabel.textContent = 'COPIED 15S REPORT';
+  } catch (error) {
+    console.warn('Unable to copy performance report.', error);
+    performancePanel.dataset.copyState = 'failed';
+    performanceCopyLabel.textContent = 'COPY FAILED';
+  }
+  window.clearTimeout(copyFeedbackTimer);
+  copyFeedbackTimer = window.setTimeout(() => {
+    delete performancePanel.dataset.copyState;
+    performanceCopyLabel.textContent = 'CLICK TO COPY 15S REPORT';
+  }, 2_000);
+});
 
 async function start() {
   await loading.paint(0.36, 'Compiling water and reflections');
@@ -458,16 +578,23 @@ async function start() {
   if (harnessMode) {
     window.__WATER_HARNESS__.ready = true;
   } else {
+    fpsFrames = 0;
+    fpsSampleStart = performance.now();
+    smoothedFps = null;
+    presentationMonitor.reset();
     renderer.setAnimationLoop((timestamp) => {
-      const cpuFrameStart = nativeSustainProfile ? performance.now() : 0;
+      const cpuFrameStart = performance.now();
+      presentationMonitor.recordFrame(timestamp);
       if (!document.hidden && adaptiveQuality.observeFrame(timestamp)) {
         applyRenderQuality();
       }
       timer.update();
       renderFrame(timer.getElapsed());
-      updateFps();
+      updateFps(timestamp);
+      const cpuFrameTime = performance.now() - cpuFrameStart;
+      presentationMonitor.recordCpuFrame(timestamp, cpuFrameTime);
       if (nativeSustainProfile) {
-        sustainCpuFrameTimes.push(performance.now() - cpuFrameStart);
+        sustainCpuFrameTimes.push(cpuFrameTime);
         if (sustainCpuFrameTimes.length > 20_000) {
           sustainCpuFrameTimes.shift();
         }
