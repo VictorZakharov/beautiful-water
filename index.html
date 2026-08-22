@@ -19,9 +19,9 @@
       .loader { position: fixed; inset: 0; z-index: 100; background: #04131f; }
     </style>
     <title>Open Water</title>
-    <script type="module" crossorigin src="/beautiful-water/assets/index-BiLigfnK.js"></script>
+    <script type="module" crossorigin src="/beautiful-water/assets/index-CGT1kdhw.js"></script>
     <link rel="modulepreload" crossorigin href="/beautiful-water/assets/preload-helper-Djf8UFJF.js">
-    <link rel="stylesheet" crossorigin href="/beautiful-water/assets/index-B-ll58H1.css">
+    <link rel="stylesheet" crossorigin href="/beautiful-water/assets/index-B7zpGSDh.css">
   </head>
   <body>
     <main id="app">
@@ -33,11 +33,11 @@
       <output
         class="fps"
         aria-label="Rendering performance"
-        title="GPU capacity uses hardware frame time; presented FPS follows display refresh"
+        title="Rolling 10-second GPU render-pass p50/p95; FPS is the presented frame rate"
       >
-        <strong data-gpu-fps>--</strong>
-        <span>GPU FPS CAPACITY</span>
-        <small><b data-fps>--</b> presented</small>
+        <strong><b data-gpu-p50>--</b><i> ms</i></strong>
+        <span>GPU PASS / 10S P50</span>
+        <small>P95 <b data-gpu-p95>--</b> ms / <b data-fps>--</b> FPS</small>
       </output>
       <div class="renderer-toggle" data-renderer-toggle hidden>
         <span class="renderer-toggle__status" data-renderer-status></span>
