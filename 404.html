@@ -19,9 +19,9 @@
       .loader { position: fixed; inset: 0; z-index: 100; background: #04131f; }
     </style>
     <title>Open Water</title>
-    <script type="module" crossorigin src="/beautiful-water/assets/index-d0pUNhz5.js"></script>
+    <script type="module" crossorigin src="/beautiful-water/assets/index-BQaahAeh.js"></script>
     <link rel="modulepreload" crossorigin href="/beautiful-water/assets/preload-helper-Djf8UFJF.js">
-    <link rel="stylesheet" crossorigin href="/beautiful-water/assets/index-LwGtNmHo.css">
+    <link rel="stylesheet" crossorigin href="/beautiful-water/assets/index-B-ll58H1.css">
   </head>
   <body>
     <main id="app">
@@ -30,9 +30,14 @@
         aria-label="Animated open ocean with a floating red navigation buoy"
       ></canvas>
       <div class="vignette" aria-hidden="true"></div>
-      <output class="fps" aria-label="Frames per second">
-        <strong data-fps>--</strong>
-        <span>FPS</span>
+      <output
+        class="fps"
+        aria-label="Rendering performance"
+        title="GPU capacity uses hardware frame time; presented FPS follows display refresh"
+      >
+        <strong data-gpu-fps>--</strong>
+        <span>GPU FPS CAPACITY</span>
+        <small><b data-fps>--</b> presented</small>
       </output>
       <div class="renderer-toggle" data-renderer-toggle hidden>
         <span class="renderer-toggle__status" data-renderer-status></span>
