@@ -18,7 +18,8 @@ import { createRendererToggle } from './ui/renderer-toggle.js';
 const canvas = document.querySelector('#ocean-canvas');
 const app = document.querySelector('#app');
 const fpsValue = document.querySelector('[data-fps]');
-const gpuFpsValue = document.querySelector('[data-gpu-fps]');
+const gpuP50Value = document.querySelector('[data-gpu-p50]');
+const gpuP95Value = document.querySelector('[data-gpu-p95]');
 const query = new URLSearchParams(window.location.search);
 const harnessMode = query.has('harness');
 const loading = createLoadingController(app);
@@ -178,6 +179,16 @@ function resize() {
 window.addEventListener('resize', resize, { passive: true });
 document.addEventListener('visibilitychange', () => {
   adaptiveQuality.resetFrameSampling();
+  gpuFrameTimer.reset();
+});
+let rendererDisposed = false;
+window.addEventListener('pagehide', (event) => {
+  if (event.persisted || rendererDisposed) return;
+  rendererDisposed = true;
+  renderer.setAnimationLoop(null);
+  gpuFrameTimer.dispose();
+  controls.dispose();
+  renderer.dispose();
 });
 resize();
 
@@ -283,9 +294,17 @@ function updateFps() {
   const measuredFps = (fpsFrames * 1000) / sampleDuration;
   smoothedFps = THREE.MathUtils.lerp(smoothedFps, measuredFps, 0.42);
   fpsValue.textContent = String(Math.round(smoothedFps));
-  const gpuCapacity = gpuFrameTimer.getState().capacityFps;
-  gpuFpsValue.textContent = Number.isFinite(gpuCapacity)
-    ? String(Math.round(gpuCapacity))
+  const gpuTiming = gpuFrameTimer.getState();
+  const formatGpuTime = (frameTimeMs) => (
+    Number.isFinite(frameTimeMs)
+      ? frameTimeMs.toFixed(frameTimeMs < 10 ? 2 : 1)
+      : '--'
+  );
+  gpuP50Value.textContent = gpuTiming.ready
+    ? formatGpuTime(gpuTiming.medianFrameTimeMs)
+    : '--';
+  gpuP95Value.textContent = gpuTiming.ready
+    ? formatGpuTime(gpuTiming.p95FrameTimeMs)
     : '--';
   fpsFrames = 0;
   fpsSampleStart = now;

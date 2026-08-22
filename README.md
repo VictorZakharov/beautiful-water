@@ -109,15 +109,18 @@ wasting software-GPU time on intermediate frames. Coverage includes:
 ```bash
 bun run visual:test
 bun run quality:test
-# Optional WebGL/WebGPU 1080p, 1440p, and 4K GPU-capacity profile
+# Optional WebGL/WebGPU 1080p, 1440p, and 4K timing profile
 # (not used as a hardware-dependent CI gate)
 bun run performance:profile
 ```
 
 Screenshots, side-by-side composites, pixel metrics, camera and renderer diagnostics,
 wave-correlation measurements, and startup timing are written to `visual-results/`. The optional
-profile adds presented FPS plus uncapped GPU-capacity measurements to
-`runtime-capacity.json`. Set
+profile adds presented FPS plus rolling 10-second GPU render-pass p50/p95
+measurements to `runtime-timings.json`. Each renderer/resolution case runs in
+a fresh browser process so GPU state cannot leak between samples. Set
+`PERFORMANCE_VIEWPORT` to `1080p`, `1440p`, or `4K`, and
+`PERFORMANCE_RENDERER` to `webgl` or `webgpu`, to profile a subset. Set
 `PLAYWRIGHT_CHROMIUM_PATH` when Chrome or Edge is not in a standard location.
 
 ## Production and GitHub Pages

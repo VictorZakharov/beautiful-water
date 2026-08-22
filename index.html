@@ -31,11 +31,11 @@
       <output
         class="fps"
         aria-label="Rendering performance"
-        title="GPU capacity uses hardware frame time; presented FPS follows display refresh"
+        title="Rolling 10-second GPU render-pass p50/p95; FPS is the presented frame rate"
       >
-        <strong data-gpu-fps>--</strong>
-        <span>GPU FPS CAPACITY</span>
-        <small><b data-fps>--</b> presented</small>
+        <strong><b data-gpu-p50>--</b><i> ms</i></strong>
+        <span>GPU PASS / 10S P50</span>
+        <small>P95 <b data-gpu-p95>--</b> ms / <b data-fps>--</b> FPS</small>
       </output>
       <div class="renderer-toggle" data-renderer-toggle hidden>
         <span class="renderer-toggle__status" data-renderer-status></span>

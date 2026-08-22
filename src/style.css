@@ -68,7 +68,7 @@ body {
   left: clamp(12px, 2vw, 24px);
   z-index: 2;
   display: grid;
-  min-width: 70px;
+  min-width: 132px;
   padding: 10px 14px 9px;
   color: #9ce5d8;
   background: rgb(3 17 29 / 72%);
@@ -101,6 +101,20 @@ body {
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.02em;
+}
+
+.fps strong b {
+  font: inherit;
+}
+
+.fps strong i {
+  margin-left: 2px;
+  color: rgb(211 236 236 / 54%);
+  font-size: 0.58rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .fps span {

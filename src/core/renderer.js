@@ -77,8 +77,8 @@ export async function createRenderer({ canvas, antialias, preferredMode }) {
       alpha: false,
       powerPreference: 'high-performance',
       // Timestamp queries expose GPU execution time independently of the
-      // display-synchronised animation loop. They are resolved periodically
-      // by the app, so the FPS readout can report renderer capacity above Hz.
+      // display-synchronised animation loop. The app resolves them
+      // periodically into a rolling render-pass timing distribution.
       trackTimestamp: true,
       // The half-float intermediate used by default costs substantial memory
       // bandwidth at 4K. The final display is 8-bit, so keep that format end
