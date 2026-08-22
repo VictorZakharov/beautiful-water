@@ -63,6 +63,8 @@ body {
 }
 
 .fps {
+  box-sizing: border-box;
+  width: 176px;
   position: absolute;
   top: clamp(12px, 2vw, 24px);
   left: clamp(12px, 2vw, 24px);
@@ -70,7 +72,10 @@ body {
   display: grid;
   min-width: 132px;
   padding: 10px 14px 9px;
+  appearance: none;
   color: #9ce5d8;
+  font: inherit;
+  text-align: left;
   background: rgb(3 17 29 / 72%);
   border: 1px solid rgb(137 224 211 / 15%);
   border-radius: 12px;
@@ -78,12 +83,23 @@ body {
   backdrop-filter: blur(12px) saturate(120%);
   opacity: 0;
   transform: translateY(-5px);
-  pointer-events: none;
+  cursor: copy;
+  pointer-events: auto;
+  touch-action: manipulation;
   transition:
     opacity 500ms ease 180ms,
     transform 500ms ease 180ms,
     color 500ms ease,
     background-color 500ms ease;
+}
+
+.fps:hover {
+  border-color: rgb(137 224 211 / 34%);
+}
+
+.fps:focus-visible {
+  outline: 2px solid rgb(156 229 216 / 76%);
+  outline-offset: 3px;
 }
 
 .is-ready #ocean-canvas,
@@ -137,6 +153,57 @@ body {
 .fps small b {
   color: rgb(211 236 236 / 72%);
   font-variant-numeric: tabular-nums;
+}
+
+.fps__history-label {
+  margin-top: 9px;
+}
+
+.fps__history {
+  display: block;
+  width: 100%;
+  height: 34px;
+  margin-top: 4px;
+  overflow: visible;
+}
+
+.fps__history-grid {
+  stroke: rgb(211 236 236 / 12%);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.fps__history-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.fps.has-frame-drop {
+  color: #ffc07a;
+  border-color: rgb(255 192 122 / 38%);
+}
+
+.fps__history-summary {
+  margin-top: 4px;
+}
+
+.fps__copy {
+  margin-top: 8px;
+  color: rgb(211 236 236 / 40%);
+  font-size: 0.48rem;
+  letter-spacing: 0.14em;
+}
+
+.fps[data-copy-state="copied"] .fps__copy {
+  color: rgb(156 229 216 / 88%);
+}
+
+.fps[data-copy-state="failed"] .fps__copy {
+  color: #ffc07a;
 }
 
 .renderer-toggle {

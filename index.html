@@ -28,15 +28,36 @@
         aria-label="Animated open ocean with a floating red navigation buoy"
       ></canvas>
       <div class="vignette" aria-hidden="true"></div>
-      <output
+      <button
+        type="button"
         class="fps"
-        aria-label="Rendering performance"
-        title="Rolling 10-second GPU render-pass p50/p95; FPS is the presented frame rate"
+        data-performance-panel
+        aria-label="Rendering performance. Click to copy the last 15 seconds of diagnostics."
+        title="Click to copy a 15-second performance report"
       >
         <strong><b data-gpu-p50>--</b><i> ms</i></strong>
         <span>GPU PASS / 10S P50</span>
         <small>P95 <b data-gpu-p95>--</b> ms / <b data-fps>--</b> FPS</small>
-      </output>
+        <span class="fps__history-label">PRESENTED FPS / LAST 15S</span>
+        <svg
+          class="fps__history"
+          data-fps-history
+          viewBox="0 0 160 34"
+          preserveAspectRatio="none"
+          role="img"
+          aria-label="Presented FPS history is collecting"
+        >
+          <line class="fps__history-grid" x1="0" y1="1" x2="160" y2="1"></line>
+          <line class="fps__history-grid" x1="0" y1="17" x2="160" y2="17"></line>
+          <path class="fps__history-line" data-fps-history-line d=""></path>
+        </svg>
+        <small class="fps__history-summary">
+          <b data-fps-average>--</b> AVG / <b data-fps-low>--</b> 1% LOW
+        </small>
+        <span class="fps__copy" data-performance-copy aria-live="polite">
+          CLICK TO COPY 15S REPORT
+        </span>
+      </button>
       <div class="renderer-toggle" data-renderer-toggle hidden>
         <span class="renderer-toggle__status" data-renderer-status></span>
         <div class="renderer-toggle__buttons" role="group" aria-label="Graphics renderer">

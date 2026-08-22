@@ -58,8 +58,8 @@ refining the `eh` estimator while the live demo remains available for direct vis
 - Three procedural fish schools with separation, alignment, cohesion, depth avoidance,
   curiosity, habituation, and escape responses to a moving underwater camera.
 - Above-water and underwater rendering states reached continuously by orbiting through the
-  animated surface, plus a responsive loading screen and separate GPU-capacity and presented-FPS
-  readouts.
+  animated surface, plus a responsive loading screen, rolling GPU-pass timing, and a 15-second
+  presented-FPS history. Clicking the performance panel copies a complete diagnostic report.
 - GPU-aware render budgets, high-density antialiasing policy, and frame-time adaptation keep
   4K displays practical without changing the CSS resolution or the default 1080p presentation.
 - Native WebGPU/TSL and legacy WebGL/GLSL water pipelines share the same wave spectrum, scene,
@@ -81,6 +81,7 @@ Open the local URL printed by Vite.
 - Wheel: move toward or away from the buoy
 - Orbit beneath the surface to enter the underwater environment
 - Use the upper-right renderer switch to reload in WebGPU or WebGL mode
+- Click the upper-left performance graph to copy the latest 15-second diagnostic report
 
 Panning and cursor-offset zoom are intentionally disabled so the buoy remains the stable focal
 point.
@@ -101,6 +102,7 @@ wasting software-GPU time on intermediate frames. Coverage includes:
 - foam formation, transition, replacement, and long-interval transport;
 - general underwater rendering plus calm, curious, and startled fish behavior;
 - loading-stage order, progress monotonicity, frame cadence, shader warm-up, and browser errors;
+- rolling presentation history and click-to-copy performance-report contents;
 - 4K framebuffer budgets, integrated/discrete GPU policy, and adaptive quality recovery;
 - WebGPU/WebGL selection, fallback diagnostics, shared wave geometry, and side-by-side parity;
 - displacement-field correlation at three simulation times to prevent periodic tiling from
