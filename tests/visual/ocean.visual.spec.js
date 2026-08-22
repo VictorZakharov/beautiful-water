@@ -393,6 +393,7 @@ captureTest('capture ocean regression views', async ({ page }, testInfo) => {
   });
 
   const manifest = [];
+  let underwaterRayCapture = null;
   for (const view of captureViews) {
     testInfo.annotations.push({ type: 'capture', description: view.name });
     const captureTime = view.time ?? fixedTime;
@@ -442,16 +443,94 @@ captureTest('capture ocean regression views', async ({ page }, testInfo) => {
       expect(diagnostics.fish.calmness, 'a fast approach resets habituation').toBeLessThan(0.1);
     }
     const screenshotPath = path.join(outputDirectory, `${view.name}.png`);
-    await page.screenshot({
+    const screenshot = await page.screenshot({
       path: screenshotPath,
       animations: 'disabled',
       fullPage: false,
     });
+    if (view.name === 'underwater') underwaterRayCapture = screenshot;
     await testInfo.attach(view.name, {
       path: screenshotPath,
       contentType: 'image/png',
     });
     manifest.push({ ...view, time: captureTime, diagnostics });
+  }
+
+  if (rendererMode === 'webgpu' && underwaterRayCapture) {
+    await page.evaluate(() => {
+      window.__WATER_HARNESS__.setUnderwaterRaysEnabled(false);
+    });
+    const withoutRays = await page.screenshot({
+      animations: 'disabled',
+      fullPage: false,
+    });
+    await page.evaluate(() => {
+      window.__WATER_HARNESS__.setUnderwaterRaysEnabled(true);
+    });
+    const rayDirection = await page.evaluate(async ({ withBase64, withoutBase64 }) => {
+      const loadImage = (source) => new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = source;
+      });
+      const [withRays, withoutRaysImage] = await Promise.all([
+        loadImage(`data:image/png;base64,${withBase64}`),
+        loadImage(`data:image/png;base64,${withoutBase64}`),
+      ]);
+      const width = withRays.naturalWidth;
+      const height = withRays.naturalHeight;
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      context.drawImage(withRays, 0, 0);
+      const enabledPixels = context.getImageData(0, 0, width, height).data;
+      context.clearRect(0, 0, width, height);
+      context.drawImage(withoutRaysImage, 0, 0);
+      const disabledPixels = context.getImageData(0, 0, width, height).data;
+      let totalEnergy = 0;
+      let weightedY = 0;
+      let topEnergy = 0;
+      let bottomEnergy = 0;
+      for (let y = 0; y < height; y += 1) {
+        for (let x = Math.floor(width * 0.04); x < width * 0.96; x += 1) {
+          const offset = (y * width + x) * 4;
+          const enabledLuminance = enabledPixels[offset] * 0.2126
+            + enabledPixels[offset + 1] * 0.7152
+            + enabledPixels[offset + 2] * 0.0722;
+          const disabledLuminance = disabledPixels[offset] * 0.2126
+            + disabledPixels[offset + 1] * 0.7152
+            + disabledPixels[offset + 2] * 0.0722;
+          const energy = Math.max(enabledLuminance - disabledLuminance, 0);
+          totalEnergy += energy;
+          weightedY += energy * ((y + 0.5) / height);
+          if (y < height * 0.5) topEnergy += energy;
+          else bottomEnergy += energy;
+        }
+      }
+      return {
+        centroidY: weightedY / Math.max(totalEnergy, 0.0001),
+        normalizedEnergy: totalEnergy / (width * height * 255),
+        topToBottomRatio: topEnergy / Math.max(bottomEnergy, 0.0001),
+      };
+    }, {
+      withBase64: underwaterRayCapture.toString('base64'),
+      withoutBase64: withoutRays.toString('base64'),
+    });
+    await writeFile(
+      path.join(outputDirectory, 'underwater-rays.json'),
+      `${JSON.stringify(rayDirection, null, 2)}\n`,
+    );
+    expect(rayDirection.normalizedEnergy, 'underwater rays remain visible').toBeGreaterThan(0.0001);
+    expect(
+      rayDirection.centroidY,
+      'WebGPU underwater rays spread downward from an origin above the camera',
+    ).toBeGreaterThan(0.54);
+    expect(
+      rayDirection.topToBottomRatio,
+      'WebGPU underwater ray energy stays below its off-screen sun origin',
+    ).toBeLessThan(0.85);
   }
 
   await writeFile(

@@ -187,6 +187,7 @@ let fpsSampleStart = performance.now();
 let smoothedFps = 60;
 let harnessTime = 11.75;
 let harnessUnderwaterMix = null;
+let harnessUnderwaterRaysEnabled = true;
 let lastFrameDiagnostics = { drawCalls: 0, triangles: 0 };
 let cameraIsUnderwater = false;
 let renderedFrames = 0;
@@ -251,7 +252,9 @@ function renderScene() {
     drawCalls: renderer.info.render.calls,
     triangles: renderer.info.render.triangles,
   };
-  underwaterRays.render(renderer);
+  if (!harnessMode || harnessUnderwaterRaysEnabled) {
+    underwaterRays.render(renderer);
+  }
 }
 
 function renderFrame(elapsed) {
@@ -374,6 +377,10 @@ async function start() {
       }
       renderFrame(harnessTime);
       return this.getDiagnostics();
+    },
+    setUnderwaterRaysEnabled(enabled) {
+      harnessUnderwaterRaysEnabled = Boolean(enabled);
+      renderScene();
     },
     samplePerformance({ fps, samples = 1 }) {
       let changed = false;
