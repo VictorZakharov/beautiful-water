@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MeshBasicNodeMaterial } from 'three/webgpu';
+import { MeshBasicNodeMaterial, QuadMesh } from 'three/webgpu';
 import {
   Fn,
   atan,
@@ -129,13 +129,10 @@ export function createWebGpuUnderwaterRays(sunDirection) {
   compositeMaterial.name = 'WebGPU underwater sun rays composite';
   compositeMaterial.colorNode = compositeSample.rgb;
   compositeMaterial.opacityNode = compositeSample.a;
-  const compositeScene = new THREE.Scene();
-  const compositeQuad = new THREE.Mesh(
-    new THREE.PlaneGeometry(2, 2),
-    compositeMaterial,
-  );
-  compositeQuad.frustumCulled = false;
-  compositeScene.add(compositeQuad);
+  // QuadMesh uses the render-target UV convention for each backend. A regular
+  // PlaneGeometry flips WebGPU render targets vertically and moves the ray
+  // origin from above the viewport to below it.
+  const compositeQuad = new QuadMesh(compositeMaterial);
 
   const eta = 1 / 1.333;
   const horizontal = new THREE.Vector2(sunDirection.x, sunDirection.z).multiplyScalar(eta);
@@ -186,7 +183,7 @@ export function createWebGpuUnderwaterRays(sunDirection) {
       renderer.render(overlayScene, overlayCamera);
       renderer.setRenderTarget(renderTarget);
       renderer.setClearColor(clearColor, clearAlpha);
-      renderer.render(compositeScene, overlayCamera);
+      compositeQuad.render(renderer);
       renderer.autoClear = autoClear;
     },
   };

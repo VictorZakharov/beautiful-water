@@ -1,6 +1,19 @@
 import * as THREE from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
-import { mix, smoothstep, texture, uniform, vec3 } from 'three/tsl';
+import {
+  Fn,
+  If,
+  cameraPosition,
+  clamp,
+  dot,
+  mix,
+  normalize,
+  positionWorld,
+  smoothstep,
+  texture,
+  uniform,
+  vec3,
+} from 'three/tsl';
 
 const SUN_DISTANCE = 315;
 
@@ -52,136 +65,151 @@ function createSunTexture() {
 }
 
 function createCloudTexture() {
+  const width = 768;
+  const height = 384;
   const textureCanvas = document.createElement('canvas');
-  textureCanvas.width = 512;
-  textureCanvas.height = 256;
+  textureCanvas.width = width;
+  textureCanvas.height = height;
   const context = textureCanvas.getContext('2d');
-  context.clearRect(0, 0, 512, 256);
+  const image = context.createImageData(width, height);
 
-  const drawPuff = (x, y, radiusX, radiusY, color) => {
-    const gradient = context.createRadialGradient(x, y, 1, x, y, radiusX);
-    gradient.addColorStop(0, color);
-    gradient.addColorStop(0.62, color);
-    gradient.addColorStop(1, 'rgba(225,236,242,0)');
-    context.save();
-    context.translate(x, y);
-    context.scale(1, radiusY / radiusX);
-    context.translate(-x, -y);
-    context.fillStyle = gradient;
-    context.fillRect(x - radiusX, y - radiusX, radiusX * 2, radiusX * 2);
-    context.restore();
+  const smootherStep = (value) => value * value * (3 - 2 * value);
+  const smoothStep = (edge0, edge1, value) => {
+    const normalized = Math.min(Math.max(
+      (value - edge0) / (edge1 - edge0),
+      0,
+    ), 1);
+    return smootherStep(normalized);
   };
-
-  drawPuff(256, 171, 205, 46, 'rgba(68,91,108,0.42)');
-  const puffs = [
-    [75, 148, 68, 48], [138, 121, 83, 66], [211, 130, 92, 76],
-    [282, 99, 108, 88], [359, 124, 94, 71], [432, 151, 72, 50],
-    [252, 160, 130, 60],
-  ];
-  for (const [x, y, radiusX, radiusY] of puffs) {
-    drawPuff(x, y, radiusX, radiusY, 'rgba(231,239,243,0.82)');
-  }
-
-  // Small lobes and transparent erosion give the silhouette actual cloud
-  // detail. The former whole-canvas blur turned these into giant soft blobs.
-  let detailState = 0x48f2a31d;
-  const random = () => {
-    detailState = (Math.imul(detailState, 1664525) + 1013904223) >>> 0;
-    return detailState / 4294967296;
+  const fract = (value) => value - Math.floor(value);
+  const hash = (x, y) => {
+    let px = fract(x * 123.34);
+    let py = fract(y * 456.21);
+    const offset = px * (px + 45.32) + py * (py + 45.32);
+    px += offset;
+    py += offset;
+    return fract(px * py);
   };
-  for (let index = 0; index < 34; index += 1) {
-    const x = 61 + random() * 390;
-    const normalized = Math.abs(x - 256) / 195;
-    const y = 103 + random() * 67 + normalized * 32;
-    const radiusX = 10 + random() * 24;
-    const radiusY = radiusX * (0.42 + random() * 0.34);
-    drawPuff(x, y, radiusX, radiusY, `rgba(242,247,248,${0.48 + random() * 0.30})`);
+  const valueNoise = (x, y) => {
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const blendX = smootherStep(fract(x));
+    const blendY = smootherStep(fract(y));
+    const lower = THREE.MathUtils.lerp(
+      hash(x0, y0),
+      hash(x0 + 1, y0),
+      blendX,
+    );
+    const upper = THREE.MathUtils.lerp(
+      hash(x0, y0 + 1),
+      hash(x0 + 1, y0 + 1),
+      blendX,
+    );
+    return THREE.MathUtils.lerp(lower, upper, blendY);
+  };
+  const directionalFbm = (
+    x, y, z,
+    weightX, weightY, weightZ, weightTotal,
+    scale, offsetX, offsetY, offsetZ,
+  ) => {
+    let px = x * scale + offsetX;
+    let py = y * scale + offsetY;
+    let pz = z * scale + offsetZ;
+    let value = 0;
+    let amplitude = 0.5;
+    for (let octave = 0; octave < 5; octave += 1) {
+      value += (
+        valueNoise(py + 13.7, pz - 4.1) * weightX
+        + valueNoise(px - 8.3, pz + 17.2) * weightY
+        + valueNoise(px + 5.9, py + 11.4) * weightZ
+      ) / weightTotal * amplitude;
+      px = px * 2.03 + 7.1;
+      py = py * 2.03 - 9.4;
+      pz = pz * 2.03 + 13.6;
+      amplitude *= 0.5;
+    }
+    return value;
+  };
+  const azimuthCos = new Float32Array(width);
+  const azimuthSin = new Float32Array(width);
+  for (let x = 0; x < width; x += 1) {
+    const azimuth = (x / (width - 1)) * Math.PI * 2;
+    azimuthCos[x] = Math.cos(azimuth);
+    azimuthSin[x] = Math.sin(azimuth);
   }
 
-  context.save();
-  context.globalCompositeOperation = 'destination-out';
-  for (let index = 0; index < 12; index += 1) {
-    const x = 52 + random() * 408;
-    const y = 172 + random() * 28;
-    const radiusX = 5 + random() * 12;
-    const radiusY = 4 + random() * 7;
-    drawPuff(x, y, radiusX, radiusY, `rgba(0,0,0,${0.26 + random() * 0.28})`);
+  // Bake a wrap-safe, multi-scale cloud field once. This mirrors the broad
+  // field plus erosion used by the WebGL sky without paying for procedural
+  // noise in every sky fragment and reflection pass.
+  for (let y = 0; y < height; y += 1) {
+    const canvasV = 1 - y / (height - 1);
+    // Canvas uploads use opposite vertical conventions on the native WebGPU
+    // and node-WebGL backends. Mirror the field around the equator so either
+    // backend samples clouds on the visible upper skydome.
+    const v = 0.5 + Math.abs(canvasV - 0.5);
+    const elevation = (v - 0.5) * Math.PI;
+    const directionY = Math.sin(elevation);
+    const horizontal = Math.cos(elevation);
+    const altitudeFade = smoothStep(0.018, 0.12, directionY)
+      * (1 - smoothStep(0.84, 0.99, directionY));
+    if (altitudeFade <= 0) continue;
+
+    for (let x = 0; x < width; x += 1) {
+      const directionX = azimuthCos[x] * horizontal;
+      const directionZ = azimuthSin[x] * horizontal;
+      const directionX2 = directionX * directionX;
+      const directionY2 = directionY * directionY;
+      const directionZ2 = directionZ * directionZ;
+      const weightX = directionX2 * directionX2;
+      const weightY = directionY2 * directionY2;
+      const weightZ = directionZ2 * directionZ2;
+      const weightTotal = Math.max(weightX + weightY + weightZ, 0.0001);
+      const broad = directionalFbm(
+        directionX, directionY, directionZ,
+        weightX, weightY, weightZ, weightTotal,
+        3.4, 0, 0, 0,
+      ) * 0.78
+        + directionalFbm(
+          directionX, directionY, directionZ,
+          weightX, weightY, weightZ, weightTotal,
+          7.3, -8.7, 4.1, 12.8,
+        ) * 0.22;
+      const erosion = directionalFbm(
+        directionX, directionY, directionZ,
+        weightX, weightY, weightZ, weightTotal,
+        12.6, 19.2, -6.4, 3.7,
+      );
+      // Offset the baked threshold slightly to compensate for bilinear
+      // texture sampling, retaining the fuller, resolved banks of the live
+      // WebGL shader instead of shrinking them into isolated wisps.
+      const body = smoothStep(0.480, 0.610, broad);
+      const edgeDetail = THREE.MathUtils.lerp(
+        0.52,
+        1,
+        smoothStep(0.30, 0.67, erosion),
+      );
+      const alpha = Math.min(body * edgeDetail * altitudeFade * 0.84, 1);
+      const offset = (y * width + x) * 4;
+      image.data[offset] = Math.round(Math.min(erosion, 1) * 255);
+      image.data[offset + 1] = 255;
+      image.data[offset + 2] = 255;
+      image.data[offset + 3] = Math.round(alpha * 255);
+    }
   }
-  context.restore();
+  context.putImageData(image, 0, 0);
 
   const texture = new THREE.CanvasTexture(textureCanvas);
-  texture.name = 'WebGPU cloud bank';
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.name = 'WebGPU procedural cloud field';
+  texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = true;
+  texture.generateMipmaps = false;
   return texture;
-}
-
-function createCloudDeck() {
-  const positions = [];
-  const uvs = [];
-  const indices = [];
-  const worldUp = new THREE.Vector3(0, 1, 0);
-  let state = 0x23ca81f7;
-  const random = () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-
-  for (let index = 0; index < 15; index += 1) {
-    const azimuth = (index / 15) * Math.PI * 2 + (random() - 0.5) * 0.24;
-    const elevation = 0.12 + random() * 0.34;
-    const direction = new THREE.Vector3(
-      Math.cos(azimuth) * Math.cos(elevation),
-      Math.sin(elevation),
-      Math.sin(azimuth) * Math.cos(elevation),
-    );
-    const center = direction.clone().multiplyScalar(330);
-    const right = new THREE.Vector3().crossVectors(worldUp, direction).normalize();
-    const up = new THREE.Vector3().crossVectors(direction, right).normalize();
-    const halfWidth = 22 + random() * 28;
-    const halfHeight = 8 + random() * 9;
-    const vertexOffset = positions.length / 3;
-    for (const [side, vertical] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-      const corner = center.clone()
-        .addScaledVector(right, side * halfWidth)
-        .addScaledVector(up, vertical * halfHeight);
-      positions.push(corner.x, corner.y, corner.z);
-    }
-    uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
-    indices.push(
-      vertexOffset, vertexOffset + 1, vertexOffset + 2,
-      vertexOffset, vertexOffset + 2, vertexOffset + 3,
-    );
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setIndex(indices);
-  const material = new THREE.MeshBasicMaterial({
-    map: createCloudTexture(),
-    color: 0xf2f7f8,
-    transparent: true,
-    opacity: 0.78,
-    alphaTest: 0.012,
-    depthWrite: false,
-    depthTest: true,
-    side: THREE.DoubleSide,
-    toneMapped: false,
-    fog: false,
-  });
-  const clouds = new THREE.Mesh(geometry, material);
-  clouds.name = 'WebGPU cloud deck';
-  clouds.renderOrder = -6;
-  clouds.frustumCulled = false;
-  return clouds;
 }
 
 export function createWebGpuSky(scene, sunDirection) {
   const underwaterNode = uniform(0);
   const skyTexture = createSkyTexture();
+  const cloudTexture = createCloudTexture();
   const skyMaterial = new MeshBasicNodeMaterial({
     side: THREE.FrontSide,
     depthWrite: false,
@@ -189,11 +217,39 @@ export function createWebGpuSky(scene, sunDirection) {
     fog: false,
     toneMapped: false,
   });
-  skyMaterial.colorNode = mix(
-    texture(skyTexture).rgb,
-    vec3(0.0018, 0.045, 0.065),
-    smoothstep(0.02, 0.98, underwaterNode),
-  );
+  skyMaterial.colorNode = Fn(() => {
+    const underwaterColor = vec3(0.0018, 0.045, 0.065);
+    const outputColor = underwaterColor.toVar();
+    If(underwaterNode.lessThan(0.98), () => {
+      const direction = normalize(positionWorld.sub(cameraPosition));
+      const cloudLight = clamp(
+        dot(direction, vec3(
+          sunDirection.x,
+          sunDirection.y,
+          sunDirection.z,
+        )).mul(0.90).add(direction.y.mul(0.55)).add(0.42),
+        0,
+        1,
+      );
+      const cloudSample = texture(cloudTexture);
+      const cloudColor = mix(
+        vec3(0.14, 0.22, 0.30),
+        vec3(1.0, 1.0, 1.0),
+        cloudLight,
+      );
+      const surfaceColor = mix(
+        texture(skyTexture).rgb,
+        cloudColor,
+        cloudSample.a,
+      );
+      outputColor.assign(mix(
+        surfaceColor,
+        underwaterColor,
+        smoothstep(0.02, 0.98, underwaterNode),
+      ));
+    });
+    return outputColor;
+  })();
   // Microsoft WARP can cull BackSide node materials inconsistently. Invert
   // the sphere once and render ordinary front faces so native adapters and
   // software WebGPU execute the same portable rasterization path.
@@ -204,8 +260,6 @@ export function createWebGpuSky(scene, sunDirection) {
   sky.renderOrder = -10;
   sky.frustumCulled = false;
   scene.add(sky);
-  const clouds = createCloudDeck();
-  scene.add(clouds);
 
   const visibility = { value: 1 };
   const sunMaterial = new THREE.SpriteMaterial({
@@ -236,10 +290,7 @@ export function createWebGpuSky(scene, sunDirection) {
       visibility.value = surfaceVisibility;
       underwaterNode.value = underwaterMix;
       sky.position.copy(camera.position);
-      sky.rotation.y = time * 0.00012;
-      clouds.position.copy(camera.position);
-      clouds.rotation.y = time * 0.00016;
-      clouds.material.opacity = 0.78 * surfaceVisibility;
+      sky.rotation.y = time * -0.0013;
       sun.position.copy(camera.position).addScaledVector(sunDirection, SUN_DISTANCE);
       sunMaterial.opacity = 0.82 * surfaceVisibility;
     },

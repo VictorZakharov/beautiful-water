@@ -92,7 +92,10 @@ export function createAdaptiveQuality({
   gpuClass = 'unknown',
   rendererName = 'Unknown WebGL renderer',
   enabled = true,
+  lockedPixelRatio = null,
 } = {}) {
+  const qualityLocked = Number.isFinite(lockedPixelRatio)
+    && lockedPixelRatio > 0;
   const budgets = GPU_PIXEL_BUDGETS[gpuClass] ?? GPU_PIXEL_BUDGETS.unknown;
   let viewportWidth = Math.max(1, width ?? 1);
   let viewportHeight = Math.max(1, height ?? 1);
@@ -132,9 +135,11 @@ export function createAdaptiveQuality({
     const cssPixels = viewportWidth * viewportHeight;
     const nativePixels = cssPixels * nativePixelRatio * nativePixelRatio;
     const budgetRatio = Math.sqrt(pixelBudget / cssPixels);
-    const pixelRatio = Math.min(nativePixelRatio, budgetRatio);
+    const pixelRatio = qualityLocked
+      ? clamp(lockedPixelRatio, 0.5, nativePixelRatio)
+      : Math.min(nativePixelRatio, budgetRatio);
     const renderScale = pixelRatio / nativePixelRatio;
-    const tier = qualityTier(renderScale);
+    const tier = qualityLocked ? 'high' : qualityTier(renderScale);
     // WebGLRenderer floors the physical canvas dimensions when applying DPR.
     const drawingBufferWidth = Math.max(1, Math.floor(viewportWidth * pixelRatio));
     const drawingBufferHeight = Math.max(1, Math.floor(viewportHeight * pixelRatio));
@@ -142,6 +147,7 @@ export function createAdaptiveQuality({
     return {
       revision,
       enabled,
+      locked: qualityLocked,
       gpuClass,
       renderer: rendererName,
       tier,
@@ -154,7 +160,9 @@ export function createAdaptiveQuality({
       drawingBufferWidth,
       drawingBufferHeight,
       renderPixels: drawingBufferWidth * drawingBufferHeight,
-      pixelBudget,
+      pixelBudget: qualityLocked
+        ? drawingBufferWidth * drawingBufferHeight
+        : pixelBudget,
       minimumPixelBudget: Math.min(budgets.minimum * MEGAPIXEL, nativePixels),
       maximumPixelBudget: Math.min(budgets.maximum * MEGAPIXEL, nativePixels),
       captureResolution: captureResolutionFor(tier, gpuClass),
@@ -165,7 +173,12 @@ export function createAdaptiveQuality({
   }
 
   function applyFrameRate(fps) {
-    if (!enabled || !Number.isFinite(fps) || fps <= 0) return false;
+    if (
+      !enabled
+      || qualityLocked
+      || !Number.isFinite(fps)
+      || fps <= 0
+    ) return false;
 
     smoothedFps += (fps - smoothedFps) * 0.35;
     if (cooldownWindows > 0) cooldownWindows -= 1;
@@ -230,7 +243,7 @@ export function createAdaptiveQuality({
       return state();
     },
     observeFrame(timestamp) {
-      if (!enabled) return false;
+      if (!enabled || qualityLocked) return false;
       if (lastTimestamp === null) {
         lastTimestamp = timestamp;
         return false;

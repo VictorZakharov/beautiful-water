@@ -301,7 +301,17 @@ export function createWebGpuWaterMaterial({
 
     // The broad lobe locates a continuous reflection path; the advected
     // multi-scale mask resolves it into wind-oriented sparkles.
-    const broadAlpha = clamp(microfacetAlpha.mul(2.7).add(0.010), 0.014, 0.088);
+    const grazingAmount = float(1).sub(smoothstep(
+      1.20,
+      3.00,
+      max(cameraPosition.y, 0),
+    ));
+    const broadAlpha = clamp(
+      microfacetAlpha.mul(mix(2.7, 3.70, grazingAmount))
+        .add(mix(0.010, 0.016, grazingAmount)),
+      0.014,
+      mix(0.088, 0.122, grazingAmount),
+    );
     const broadDistribution = distributionGgxNode(broadAlpha, normalDotHalf);
     const broadVisibility = visibilitySmithGgxCorrelatedNode(
       broadAlpha,
@@ -373,11 +383,7 @@ export function createWebGpuWaterMaterial({
     // the mean plane. Key this correction to camera height (not per-fragment
     // NdotV, which stays high on sun-facing facets) so medium/top-down views
     // use the unmodified shared BRDF.
-    const grazingResolutionCompensation = mix(
-      3.30,
-      1,
-      smoothstep(1.20, 3.00, max(cameraPosition.y, 0)),
-    );
+    const grazingResolutionCompensation = mix(1, 4.20, grazingAmount);
     surfaceColor.addAssign(
       vec3(1.0, 0.84, 0.61)
         .mul(glitterEnergy)

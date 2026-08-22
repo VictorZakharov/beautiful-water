@@ -18,9 +18,12 @@ import { createRendererToggle } from './ui/renderer-toggle.js';
 const canvas = document.querySelector('#ocean-canvas');
 const app = document.querySelector('#app');
 const fpsValue = document.querySelector('[data-fps]');
-const gpuFpsValue = document.querySelector('[data-gpu-fps]');
+const gpuP50Value = document.querySelector('[data-gpu-p50]');
+const gpuP95Value = document.querySelector('[data-gpu-p95]');
 const query = new URLSearchParams(window.location.search);
 const harnessMode = query.has('harness');
+const nativeSustainProfile = !harnessMode
+  && query.get('sustain') === 'native-4k';
 const loading = createLoadingController(app);
 loading.setStage(0.10, 'Building ocean surface');
 const preferredRenderer = readRendererPreference(query);
@@ -68,6 +71,7 @@ const adaptiveQuality = createAdaptiveQuality({
   devicePixelRatio: window.devicePixelRatio,
   gpuClass,
   rendererName: gpu.renderer,
+  lockedPixelRatio: nativeSustainProfile ? 1 : null,
 });
 const initialQuality = adaptiveQuality.getState();
 const gpuFrameTimer = createGpuFrameTimer(renderer);
@@ -178,6 +182,23 @@ function resize() {
 window.addEventListener('resize', resize, { passive: true });
 document.addEventListener('visibilitychange', () => {
   adaptiveQuality.resetFrameSampling();
+  gpuFrameTimer.reset();
+});
+let rendererDisposed = false;
+function disposeRenderer() {
+  if (rendererDisposed) return;
+  rendererDisposed = true;
+  renderer.setAnimationLoop(null);
+  gpuFrameTimer.dispose();
+  controls.dispose();
+  // Native-4K WebGPU targets can block indefinitely in Three.js dispose()
+  // while Chromium is already tearing down the document and GPU context.
+  // Stop all producers here and let navigation release the WebGPU backend.
+  if (!renderer.isWebGPURenderer) renderer.dispose();
+}
+window.addEventListener('pagehide', (event) => {
+  if (event.persisted) return;
+  disposeRenderer();
 });
 resize();
 
@@ -187,9 +208,39 @@ let fpsSampleStart = performance.now();
 let smoothedFps = 60;
 let harnessTime = 11.75;
 let harnessUnderwaterMix = null;
+let harnessUnderwaterRaysEnabled = true;
 let lastFrameDiagnostics = { drawCalls: 0, triangles: 0 };
 let cameraIsUnderwater = false;
 let renderedFrames = 0;
+const sustainCpuFrameTimes = [];
+
+function getSustainDiagnostics() {
+  return {
+    ready: nativeSustainProfile
+      && window.__WATER_PERFORMANCE__?.ready === true,
+    canvasSize: [renderer.domElement.width, renderer.domElement.height],
+    quality: adaptiveQuality.getState(),
+    gpu: gpuFrameTimer.getState(),
+    cpuFrameTimes: [...sustainCpuFrameTimes],
+    renderedFrames,
+  };
+}
+
+if (nativeSustainProfile) {
+  window.__WATER_PERFORMANCE__ = {
+    ready: false,
+    resetMeasurement() {
+      sustainCpuFrameTimes.length = 0;
+      gpuFrameTimer.reset();
+      return getSustainDiagnostics();
+    },
+    getDiagnostics: getSustainDiagnostics,
+    dispose() {
+      this.ready = false;
+      disposeRenderer();
+    },
+  };
+}
 
 function updateFrameState(elapsed) {
   if (!harnessMode) {
@@ -251,7 +302,9 @@ function renderScene() {
     drawCalls: renderer.info.render.calls,
     triangles: renderer.info.render.triangles,
   };
-  underwaterRays.render(renderer);
+  if (!harnessMode || harnessUnderwaterRaysEnabled) {
+    underwaterRays.render(renderer);
+  }
 }
 
 function renderFrame(elapsed) {
@@ -280,9 +333,17 @@ function updateFps() {
   const measuredFps = (fpsFrames * 1000) / sampleDuration;
   smoothedFps = THREE.MathUtils.lerp(smoothedFps, measuredFps, 0.42);
   fpsValue.textContent = String(Math.round(smoothedFps));
-  const gpuCapacity = gpuFrameTimer.getState().capacityFps;
-  gpuFpsValue.textContent = Number.isFinite(gpuCapacity)
-    ? String(Math.round(gpuCapacity))
+  const gpuTiming = gpuFrameTimer.getState();
+  const formatGpuTime = (frameTimeMs) => (
+    Number.isFinite(frameTimeMs)
+      ? frameTimeMs.toFixed(frameTimeMs < 10 ? 2 : 1)
+      : '--'
+  );
+  gpuP50Value.textContent = gpuTiming.ready
+    ? formatGpuTime(gpuTiming.medianFrameTimeMs)
+    : '--';
+  gpuP95Value.textContent = gpuTiming.ready
+    ? formatGpuTime(gpuTiming.p95FrameTimeMs)
     : '--';
   fpsFrames = 0;
   fpsSampleStart = now;
@@ -375,6 +436,10 @@ async function start() {
       renderFrame(harnessTime);
       return this.getDiagnostics();
     },
+    setUnderwaterRaysEnabled(enabled) {
+      harnessUnderwaterRaysEnabled = Boolean(enabled);
+      renderScene();
+    },
     samplePerformance({ fps, samples = 1 }) {
       let changed = false;
       for (let index = 0; index < samples; index += 1) {
@@ -394,13 +459,21 @@ async function start() {
     window.__WATER_HARNESS__.ready = true;
   } else {
     renderer.setAnimationLoop((timestamp) => {
+      const cpuFrameStart = nativeSustainProfile ? performance.now() : 0;
       if (!document.hidden && adaptiveQuality.observeFrame(timestamp)) {
         applyRenderQuality();
       }
       timer.update();
       renderFrame(timer.getElapsed());
       updateFps();
+      if (nativeSustainProfile) {
+        sustainCpuFrameTimes.push(performance.now() - cpuFrameStart);
+        if (sustainCpuFrameTimes.length > 20_000) {
+          sustainCpuFrameTimes.shift();
+        }
+      }
     });
+    if (nativeSustainProfile) window.__WATER_PERFORMANCE__.ready = true;
   }
 }
 
