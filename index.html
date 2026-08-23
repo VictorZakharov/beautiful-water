@@ -19,9 +19,9 @@
       .loader { position: fixed; inset: 0; z-index: 100; background: #04131f; }
     </style>
     <title>Open Water</title>
-    <script type="module" crossorigin src="/beautiful-water/assets/index-C4WH1F8h.js"></script>
+    <script type="module" crossorigin src="/beautiful-water/assets/index-Bw_deVy-.js"></script>
     <link rel="modulepreload" crossorigin href="/beautiful-water/assets/preload-helper-Djf8UFJF.js">
-    <link rel="stylesheet" crossorigin href="/beautiful-water/assets/index-B2YT-v6S.css">
+    <link rel="stylesheet" crossorigin href="/beautiful-water/assets/index-CiDiR1JR.css">
   </head>
   <body>
     <main id="app">
@@ -34,20 +34,20 @@
         type="button"
         class="fps"
         data-performance-panel
-        aria-label="Rendering diagnostics. Browser callback rate is not physical monitor refresh. Click to copy the last 15 seconds of diagnostics."
+        aria-label="Rendering diagnostics. Rendered FPS is application work, not physical monitor refresh. Click to copy the last 15 seconds of diagnostics."
         title="Click to copy a 15-second performance report"
       >
         <strong><b data-gpu-p50>--</b><i> ms</i></strong>
         <span>GPU PASS / 10S P50</span>
-        <small>P95 <b data-gpu-p95>--</b> ms / <b data-fps>--</b> CB/S</small>
-        <span class="fps__history-label">BROWSER CALLBACKS/S / LAST 15S</span>
+        <small>P95 <b data-gpu-p95>--</b> ms / <b data-fps>--</b> FPS</small>
+        <span class="fps__history-label">RENDER FPS / LAST 15S</span>
         <svg
           class="fps__history"
           data-fps-history
           viewBox="0 0 160 34"
           preserveAspectRatio="none"
           role="img"
-          aria-label="Browser animation callback history is collecting"
+          aria-label="Rendered frame history is collecting"
         >
           <line class="fps__history-grid" x1="0" y1="1" x2="160" y2="1"></line>
           <line class="fps__history-grid" x1="0" y1="17" x2="160" y2="17"></line>
@@ -56,7 +56,7 @@
         <small class="fps__history-summary">
           <b data-fps-average>--</b> AVG / <b data-fps-low>--</b> 1% LOW
         </small>
-        <span class="fps__display-note" data-display-note>PANEL HZ UNKNOWN</span>
+        <span class="fps__display-note" data-display-note>CAP OFF / PANEL HZ UNKNOWN</span>
         <span class="fps__copy" data-performance-copy aria-live="polite">
           CLICK TO COPY 15S REPORT
         </span>
@@ -67,6 +67,17 @@
           <button type="button" data-renderer-mode="webgpu" aria-pressed="false">WebGPU</button>
           <button type="button" data-renderer-mode="webgl" aria-pressed="false">WebGL</button>
         </div>
+        <label class="render-cap" data-render-cap-control hidden>
+          <span>Render cap</span>
+          <select data-render-cap-select aria-label="Maximum rendered frames per second">
+            <option value="off">Off</option>
+            <option value="30">30 FPS</option>
+            <option value="60">60 FPS</option>
+            <option value="120">120 FPS</option>
+            <option value="144">144 FPS</option>
+            <option value="240">240 FPS</option>
+          </select>
+        </label>
       </div>
       <div class="loader" role="status" aria-live="polite" aria-label="Loading ocean simulation">
         <div class="loader__visual" aria-hidden="true">
