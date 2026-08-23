@@ -7,6 +7,11 @@ import {
 } from './core/adaptive-quality.js';
 import { createGpuFrameTimer } from './core/gpu-frame-timer.js';
 import {
+  createRenderPacer,
+  readRenderCapPreference,
+  RENDER_CAP_QUERY,
+} from './core/render-cap.js';
+import {
   createHistoryPath,
   createPresentationMonitor,
   formatPerformanceReport,
@@ -20,6 +25,7 @@ import { createFishSchools } from './scene/fish.js';
 import { loadScenePipeline } from './scene/pipeline.js';
 import { sampleOceanSurface } from './scene/waves.js';
 import { createLoadingController } from './ui/loading.js';
+import { createRenderCapControl } from './ui/render-cap.js';
 import { createRendererToggle } from './ui/renderer-toggle.js';
 
 const canvas = document.querySelector('#ocean-canvas');
@@ -39,6 +45,10 @@ const runtimeIdentity = describeRuntimeIdentity(navigator);
 const harnessMode = query.has('harness');
 const nativeSustainProfile = !harnessMode
   && query.get('sustain') === 'native-4k';
+const preferredRenderCap = nativeSustainProfile
+  ? null
+  : readRenderCapPreference(query);
+const renderPacer = createRenderPacer(preferredRenderCap);
 const loading = createLoadingController(app);
 loading.setStage(0.10, 'Building ocean surface');
 const preferredRenderer = readRendererPreference(query);
@@ -91,6 +101,7 @@ const adaptiveQuality = createAdaptiveQuality({
 const initialQuality = adaptiveQuality.getState();
 const gpuFrameTimer = createGpuFrameTimer(renderer);
 const presentationMonitor = createPresentationMonitor();
+const renderMonitor = createPresentationMonitor();
 
 await loading.paint(0.24, 'Loading water pipeline');
 const scenePipeline = await loadScenePipeline(rendererInfo.pipeline);
@@ -197,14 +208,7 @@ function resize() {
 
 window.addEventListener('resize', resize, { passive: true });
 document.addEventListener('visibilitychange', () => {
-  adaptiveQuality.resetFrameSampling();
-  gpuFrameTimer.reset();
-  presentationMonitor.reset();
-  fpsFrames = 0;
-  fpsSampleStart = performance.now();
-  smoothedFps = null;
-  fpsValue.textContent = '--';
-  fpsHistoryLine.setAttribute('d', '');
+  resetPerformanceSampling();
 });
 let rendererDisposed = false;
 function disposeRenderer() {
@@ -229,6 +233,7 @@ let fpsFrames = 0;
 let fpsSampleStart = performance.now();
 let smoothedFps = null;
 let latestPresentation = presentationMonitor.getState();
+let latestRendering = renderMonitor.getState();
 let harnessTime = 11.75;
 let harnessUnderwaterMix = null;
 let harnessUnderwaterRaysEnabled = true;
@@ -236,6 +241,25 @@ let lastFrameDiagnostics = { drawCalls: 0, triangles: 0 };
 let cameraIsUnderwater = false;
 let renderedFrames = 0;
 const sustainCpuFrameTimes = [];
+
+function resetPerformanceSampling() {
+  adaptiveQuality.resetFrameSampling();
+  gpuFrameTimer.reset();
+  presentationMonitor.reset();
+  renderMonitor.reset();
+  renderPacer.reset();
+  fpsFrames = 0;
+  fpsSampleStart = performance.now();
+  smoothedFps = null;
+  fpsValue.textContent = '--';
+  gpuP50Value.textContent = '--';
+  gpuP95Value.textContent = '--';
+  fpsAverageValue.textContent = '--';
+  fpsLowValue.textContent = '--';
+  fpsHistoryLine.setAttribute('d', '');
+  fpsHistory.setAttribute('aria-label', 'Rendered frame history is collecting');
+  performancePanel.classList.remove('has-frame-drop');
+}
 
 function getSustainDiagnostics() {
   return {
@@ -358,28 +382,31 @@ function readMultipleScreenState() {
 
 function updateDisplayNote() {
   const multipleScreens = readMultipleScreenState();
+  const cap = renderPacer.getCap();
+  const capSummary = cap === null ? 'CAP OFF' : `CAP ${cap}`;
   displayNote.textContent = multipleScreens === true
-    ? 'MULTI-SCREEN / PANEL HZ UNKNOWN'
-    : 'PANEL HZ UNKNOWN';
+    ? `${capSummary} / MULTI-SCREEN / PANEL HZ UNKNOWN`
+    : `${capSummary} / PANEL HZ UNKNOWN`;
 }
 
-function updatePresentationHud(presentation) {
-  const targetFps = presentation.refreshRateFps
-    ?? Math.max(60, presentation.averageFps ?? 0);
+function updateRenderingHud(rendering) {
+  const targetFps = renderPacer.getCap()
+    ?? rendering.refreshRateFps
+    ?? Math.max(60, rendering.averageFps ?? 0);
   fpsHistoryLine.setAttribute('d', createHistoryPath(
-    presentation.series,
+    rendering.series,
     { targetFps },
   ));
-  fpsAverageValue.textContent = formatHudFps(presentation.averageFps);
-  fpsLowValue.textContent = formatHudFps(presentation.onePercentLowFps);
+  fpsAverageValue.textContent = formatHudFps(rendering.averageFps);
+  fpsLowValue.textContent = formatHudFps(rendering.onePercentLowFps);
   fpsHistory.setAttribute(
     'aria-label',
-    `Browser animation callbacks per second over the last ${(presentation.windowElapsedMs / 1000).toFixed(1)} seconds: ${formatHudFps(presentation.averageFps)} average, ${formatHudFps(presentation.onePercentLowFps)} one-percent low`,
+    `Rendered frames per second over the last ${(rendering.windowElapsedMs / 1000).toFixed(1)} seconds: ${formatHudFps(rendering.averageFps)} average, ${formatHudFps(rendering.onePercentLowFps)} one-percent low`,
   );
-  const hasFrameDrop = presentation.windowElapsedMs >= 2_000
-    && Number.isFinite(presentation.worstOneSecondFps)
-    && Number.isFinite(presentation.refreshRateFps)
-    && presentation.worstOneSecondFps < presentation.refreshRateFps * 0.75;
+  const hasFrameDrop = rendering.windowElapsedMs >= 2_000
+    && Number.isFinite(rendering.worstOneSecondFps)
+    && Number.isFinite(targetFps)
+    && rendering.worstOneSecondFps < targetFps * 0.75;
   performancePanel.classList.toggle('has-frame-drop', hasFrameDrop);
 }
 
@@ -406,7 +433,8 @@ function updateFps(now = performance.now()) {
     ? formatGpuTime(gpuTiming.p95FrameTimeMs)
     : '--';
   latestPresentation = presentationMonitor.getState(now);
-  updatePresentationHud(latestPresentation);
+  latestRendering = renderMonitor.getState(now);
+  updateRenderingHud(latestRendering);
   fpsFrames = 0;
   fpsSampleStart = now;
 }
@@ -435,11 +463,15 @@ async function copyText(text) {
 }
 
 function buildPerformanceReport() {
-  latestPresentation = presentationMonitor.getState(performance.now());
+  const capturedAt = performance.now();
+  latestPresentation = presentationMonitor.getState(capturedAt);
+  latestRendering = renderMonitor.getState(capturedAt);
   const quality = adaptiveQuality.getState();
   return formatPerformanceReport({
     capturedAt: new Date().toISOString(),
     presentation: latestPresentation,
+    rendering: latestRendering,
+    renderCapFps: renderPacer.getCap(),
     gpu: gpuFrameTimer.getState(),
     renderer: {
       pipeline: rendererInfo.pipeline,
@@ -467,6 +499,20 @@ function buildPerformanceReport() {
   });
 }
 
+if (!nativeSustainProfile) {
+  createRenderCapControl(document.querySelector('[data-render-cap-control]'), {
+    initialCap: renderPacer.getCap(),
+    onChange(nextCap) {
+      renderPacer.setCap(nextCap);
+      const nextUrl = new URL(window.location.href);
+      if (nextCap === null) nextUrl.searchParams.delete(RENDER_CAP_QUERY);
+      else nextUrl.searchParams.set(RENDER_CAP_QUERY, String(nextCap));
+      window.history.replaceState(window.history.state, '', nextUrl);
+      resetPerformanceSampling();
+      updateDisplayNote();
+    },
+  });
+}
 updateDisplayNote();
 window.screen?.addEventListener?.('change', updateDisplayNote);
 
@@ -601,17 +647,22 @@ async function start() {
     fpsSampleStart = performance.now();
     smoothedFps = null;
     presentationMonitor.reset();
+    renderMonitor.reset();
+    renderPacer.reset();
     renderer.setAnimationLoop((timestamp) => {
-      const cpuFrameStart = performance.now();
       presentationMonitor.recordFrame(timestamp);
       if (!document.hidden && adaptiveQuality.observeFrame(timestamp)) {
         applyRenderQuality();
       }
+      if (!renderPacer.shouldRender(timestamp)) return;
+
+      const cpuFrameStart = performance.now();
+      renderMonitor.recordFrame(timestamp);
       timer.update();
       renderFrame(timer.getElapsed());
       updateFps(timestamp);
       const cpuFrameTime = performance.now() - cpuFrameStart;
-      presentationMonitor.recordCpuFrame(timestamp, cpuFrameTime);
+      renderMonitor.recordCpuFrame(timestamp, cpuFrameTime);
       if (nativeSustainProfile) {
         sustainCpuFrameTimes.push(cpuFrameTime);
         if (sustainCpuFrameTimes.length > 20_000) {

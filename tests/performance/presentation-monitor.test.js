@@ -106,9 +106,12 @@ describe('rolling presentation monitor', () => {
     const monitor = createPresentationMonitor();
     monitor.recordFrame(0);
     const timestamp = recordDuration(monitor, 0, 15_000, 60);
+    const presentation = monitor.getState(timestamp);
     const report = formatPerformanceReport({
       capturedAt: '2026-08-22T19:00:00.000Z',
-      presentation: monitor.getState(timestamp),
+      presentation,
+      rendering: presentation,
+      renderCapFps: 60,
       gpu: {
         ready: true,
         sampleCount: 12,
@@ -156,6 +159,9 @@ describe('rolling presentation monitor', () => {
 
     expect(report).toContain('Beautiful Water performance report');
     expect(report).toContain('Window: last 15.00 s of 15 s');
+    expect(report).toContain('Rendered FPS: 60.00 average');
+    expect(report).toContain('Render interval: p50 16.67 ms');
+    expect(report).toContain('Render cap: 60 FPS maximum');
     expect(report).toContain('1% low');
     expect(report).toContain('CPU frame work: p50 1.50 ms');
     expect(report).toContain('p50 2.06 ms | p95 2.82 ms');
@@ -170,7 +176,8 @@ describe('rolling presentation monitor', () => {
       'Display context: multiple screens reported | physical panel Hz unavailable to this page',
     );
     expect(report).toContain(
-      'Timing caveat: callback cadence is not a panel measurement and may follow another screen',
+      'Timing caveat: rendered FPS and callback cadence are not physical panel measurements; '
+        + 'callback cadence may follow another screen',
     );
     expect(report).toContain('frame draw calls 42 | frame triangles 123456');
     expect(report).toContain('Page state: visible | focused | DPR 2.00');

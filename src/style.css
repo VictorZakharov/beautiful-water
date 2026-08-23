@@ -253,6 +253,46 @@ body {
   gap: 4px;
 }
 
+.render-cap {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px 4px 0;
+  border-top: 1px solid rgb(137 224 211 / 12%);
+}
+
+.render-cap[hidden] {
+  display: none;
+}
+
+.render-cap span {
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.render-cap select {
+  padding: 4px 18px 4px 7px;
+  color: rgb(230 250 248 / 82%);
+  font: inherit;
+  font-size: 0.58rem;
+  font-weight: 700;
+  background: rgb(8 31 45 / 88%);
+  border: 1px solid rgb(137 224 211 / 16%);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.render-cap select:hover,
+.render-cap select:focus-visible {
+  color: #e6fffa;
+  border-color: rgb(137 224 211 / 42%);
+  outline: none;
+}
+
 .renderer-toggle button {
   padding: 6px 9px;
   color: rgb(220 242 241 / 62%);
