@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 const visualSuite = process.env.VISUAL_SUITE ?? 'all';
 const hudTest = ['all', 'ci-scene'].includes(visualSuite) ? test : test.skip;
 
-hudTest('graphs browser callback history and copies a diagnostic report', async ({ page }) => {
+hudTest('caps rendering, graphs rendered FPS, and copies a diagnostic report', async ({ page }) => {
   const browserErrors = [];
   page.on('console', (message) => {
     if (message.type() === 'error') {
@@ -27,7 +27,7 @@ hudTest('graphs browser callback history and copies a diagnostic report', async 
     });
   });
 
-  await page.goto('/?renderer=webgpu', {
+  await page.goto('/?renderer=webgpu&renderCap=30', {
     waitUntil: 'domcontentloaded',
     timeout: 20_000,
   });
@@ -38,15 +38,20 @@ hudTest('graphs browser callback history and copies a diagnostic report', async 
   ));
 
   const panel = page.locator('[data-performance-panel]');
+  const renderCap = page.locator('[data-render-cap-select]');
   await expect(panel).toBeVisible();
   await expect(panel).toHaveAttribute('type', 'button');
+  await expect(renderCap).toBeVisible();
+  await expect(renderCap).toHaveValue('30');
   await expect(page.locator('[data-fps-average]')).not.toHaveText('--');
   await expect(page.locator('[data-fps-low]')).not.toHaveText('--');
   await expect(page.locator('[data-fps-history]')).toHaveAttribute(
     'aria-label',
-    /Browser animation callbacks per second over the last/,
+    /Rendered frames per second over the last/,
   );
-  await expect(page.locator('[data-display-note]')).toContainText('PANEL HZ UNKNOWN');
+  await expect(page.locator('[data-display-note]')).toContainText(
+    'CAP 30',
+  );
 
   await panel.click();
   await page.waitForFunction(() => (
@@ -56,6 +61,14 @@ hudTest('graphs browser callback history and copies a diagnostic report', async 
     () => window.__COPIED_PERFORMANCE_REPORT__,
   );
   expect(report).toContain('Beautiful Water performance report');
+  expect(report).toContain('Rendered FPS:');
+  expect(report).toContain('Render interval: p50');
+  expect(report).toContain('Render cap: 30 FPS maximum');
+  const renderedAverage = Number(
+    report.match(/Rendered FPS: ([\d.]+) average/)?.[1],
+  );
+  expect(renderedAverage).toBeGreaterThan(0);
+  expect(renderedAverage).toBeLessThanOrEqual(32);
   expect(report).toContain('Browser animation callbacks:');
   expect(report).toContain('1% low');
   expect(report).toContain('Callback interval: p50');
@@ -63,7 +76,9 @@ hudTest('graphs browser callback history and copies a diagnostic report', async 
   expect(report).toContain('Browser callback cadence:');
   expect(report).toContain('missed callback slots:');
   expect(report).toContain('physical panel Hz unavailable to this page');
-  expect(report).toContain('callback cadence is not a panel measurement');
+  expect(report).toContain(
+    'rendered FPS and callback cadence are not physical panel measurements',
+  );
   expect(report).toContain('GPU pass (rolling 10 s):');
   expect(report).toContain('Renderer: webgpu pipeline');
   expect(report).toContain('Canvas:');
@@ -93,5 +108,13 @@ hudTest('graphs browser callback history and copies a diagnostic report', async 
     path: path.join(outputDirectory, 'performance-hud.png'),
     animations: 'disabled',
   });
+
+  await renderCap.selectOption('60');
+  await expect(renderCap).toHaveValue('60');
+  await expect(page.locator('[data-display-note]')).toContainText('CAP 60');
+  expect(new URL(page.url()).searchParams.get('renderCap')).toBe('60');
+  expect(await page.evaluate(() => (
+    localStorage.getItem('beautiful-water:render-cap')
+  ))).toBe('60');
   expect(browserErrors, browserErrors.join('\n')).toEqual([]);
 });
