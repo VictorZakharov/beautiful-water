@@ -140,4 +140,143 @@ describe('adaptive pixel budget', () => {
     expect(recovering.pixelBudget).toBeGreaterThan(reduced.pixelBudget);
     expect(recovering.pixelBudget).toBeLessThanOrEqual(recovering.maximumPixelBudget);
   });
+
+  test('uses GPU timing instead of false callback headroom on the reported M1 Pro load', () => {
+    const controller = createAdaptiveQuality({
+      width: 1920,
+      height: 1080,
+      devicePixelRatio: 2,
+      gpuClass: 'integrated',
+      gpuTimingEnabled: true,
+      targetFrameRate: 60,
+    });
+    const initial = controller.getState();
+
+    for (let sample = 0; sample < 12; sample += 1) {
+      expect(controller.sampleFrameRate(60)).toBe(false);
+    }
+    expect(controller.getState().pixelBudget).toBe(initial.pixelBudget);
+
+    let timingRevision = 1;
+    for (let recovery = 0; recovery < 5; recovery += 1) {
+      let changed = false;
+      for (let sample = 0; sample < 3; sample += 1) {
+        changed = controller.sampleGpuTiming({
+          revision: timingRevision,
+          sampleCount: sample + 3,
+          medianFrameTimeMs: 2,
+          p95FrameTimeMs: 3,
+        }) || changed;
+        timingRevision += 1;
+      }
+      expect(changed).toBe(true);
+      controller.resetGpuSampling();
+    }
+    const expanded = controller.getState();
+    expect(expanded.pixelBudget).toBe(expanded.maximumPixelBudget);
+    expect(expanded.pixelBudget).toBe(3_200_000);
+
+    expect(controller.sampleGpuTiming({
+      revision: timingRevision,
+      sampleCount: 10,
+      medianFrameTimeMs: 15.93,
+      p95FrameTimeMs: 27.39,
+    })).toBe(true);
+
+    const reduced = controller.getState();
+    expect(reduced.pixelBudget).toBe(expanded.pixelBudget * 0.72);
+    expect(reduced.renderPixels).toBeLessThan(expanded.renderPixels);
+    expect(reduced.gpuTimingStatus).toBe('overloaded');
+    expect(reduced.gpuTargetFps).toBe(60);
+    expect(reduced.gpuP95BudgetMs).toBeCloseTo(15, 5);
+  });
+
+  test('treats the render cap as a lower GPU quality target', () => {
+    const controller = createAdaptiveQuality({
+      width: 1920,
+      height: 1080,
+      devicePixelRatio: 2,
+      gpuClass: 'integrated',
+      gpuTimingEnabled: true,
+      targetFrameRate: 60,
+    });
+    const initial = controller.getState();
+
+    expect(controller.setTargetFrameRate(30)).toBe(30);
+    expect(controller.sampleGpuTiming({
+      revision: 1,
+      sampleCount: 10,
+      medianFrameTimeMs: 15.93,
+      p95FrameTimeMs: 27.39,
+    })).toBe(false);
+
+    const stable = controller.getState();
+    expect(stable.pixelBudget).toBe(initial.pixelBudget);
+    expect(stable.gpuTimingStatus).toBe('within-budget');
+    expect(stable.gpuP95BudgetMs).toBeCloseTo(30, 5);
+  });
+
+  test('requires repeated GPU headroom before recovering quality', () => {
+    const controller = createAdaptiveQuality({
+      width: 3840,
+      height: 2160,
+      devicePixelRatio: 1,
+      gpuClass: 'discrete',
+      gpuTimingEnabled: true,
+    });
+    const initial = controller.getState();
+    const fastTiming = (revision) => ({
+      revision,
+      sampleCount: revision + 2,
+      medianFrameTimeMs: 4,
+      p95FrameTimeMs: 6,
+    });
+
+    expect(controller.sampleGpuTiming(fastTiming(1))).toBe(false);
+    expect(controller.sampleGpuTiming(fastTiming(2))).toBe(false);
+    expect(controller.sampleGpuTiming(fastTiming(3))).toBe(true);
+    expect(controller.getState().pixelBudget).toBe(initial.pixelBudget * 1.08);
+    expect(controller.sampleGpuTiming(fastTiming(3))).toBe(false);
+  });
+
+  test('filters one moderate tail sample and remembers the unsafe quality ceiling', () => {
+    const controller = createAdaptiveQuality({
+      width: 1920,
+      height: 1080,
+      devicePixelRatio: 2,
+      gpuClass: 'integrated',
+      gpuTimingEnabled: true,
+    });
+    const initial = controller.getState();
+    const moderateOverload = (revision) => ({
+      revision,
+      sampleCount: revision + 2,
+      medianFrameTimeMs: 10,
+      p95FrameTimeMs: 16,
+    });
+
+    expect(controller.sampleGpuTiming(moderateOverload(1))).toBe(false);
+    expect(controller.getState().pixelBudget).toBe(initial.pixelBudget);
+    expect(controller.sampleGpuTiming(moderateOverload(2))).toBe(true);
+    expect(controller.getState().pixelBudget).toBe(initial.pixelBudget * 0.84);
+
+    let revision = 3;
+    for (let recovery = 0; recovery < 4; recovery += 1) {
+      let changed = false;
+      for (let sample = 0; sample < 3; sample += 1) {
+        changed = controller.sampleGpuTiming({
+          revision,
+          sampleCount: sample + 3,
+          medianFrameTimeMs: 4,
+          p95FrameTimeMs: 6,
+        }) || changed;
+        revision += 1;
+      }
+      if (changed) controller.resetGpuSampling();
+    }
+
+    const recovered = controller.getState();
+    expect(recovered.pixelBudget).toBeLessThanOrEqual(initial.pixelBudget * 0.94);
+    expect(recovered.learnedMaximumPixelBudget).toBe(initial.pixelBudget * 0.94);
+  });
 });

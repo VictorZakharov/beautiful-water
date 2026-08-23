@@ -346,6 +346,12 @@ export function formatPerformanceReport({
   const renderCapSummary = Number.isFinite(renderCapFps)
     ? `${formatMetric(renderCapFps, 0)} FPS maximum`
     : 'off (one render per browser callback)';
+  const adaptiveGpuSample = Number.isFinite(quality.gpuP95FrameTimeMs)
+    ? ` | last p50 ${formatMetric(quality.gpuMedianFrameTimeMs)} ms / p95 ${formatMetric(quality.gpuP95FrameTimeMs)} ms`
+    : '';
+  const adaptiveQualitySummary = quality.gpuTimingEnabled === true
+    ? `GPU pass timing / ${formatMetric(quality.gpuTargetFps, 0)} FPS target | ${quality.gpuTimingStatus} | p95 limit ${formatMetric(quality.gpuP95BudgetMs)} ms${adaptiveGpuSample}`
+    : 'browser callback cadence (GPU timestamps unavailable)';
 
   return [
     'Beautiful Water performance report',
@@ -356,6 +362,7 @@ export function formatPerformanceReport({
     `Render cap: ${renderCapSummary}`,
     `CPU frame work: p50 ${formatMetric(rendering.cpuFrame.p50Ms)} ms | p95 ${formatMetric(rendering.cpuFrame.p95Ms)} ms | p99 ${formatMetric(rendering.cpuFrame.p99Ms)} ms | worst ${formatMetric(rendering.cpuFrame.worstMs)} ms | ${rendering.cpuFrame.sampleCount} samples`,
     `GPU pass (rolling ${formatMetric(gpuWindowSeconds, 0)} s): ${gpuSummary}`,
+    `Adaptive quality: ${adaptiveQualitySummary}`,
     `Browser animation callbacks: ${formatMetric(presentation.averageFps, 2)}/s average | ${formatMetric(presentation.currentFps, 2)}/s current | ${formatMetric(presentation.onePercentLowFps, 2)}/s 1% low | ${formatMetric(presentation.worstOneSecondFps, 2)}/s worst 1 s`,
     `Callback interval: p50 ${formatMetric(presentation.p50FrameTimeMs)} ms | p95 ${formatMetric(presentation.p95FrameTimeMs)} ms | p99 ${formatMetric(presentation.p99FrameTimeMs)} ms | worst ${formatMetric(presentation.worstFrameTimeMs)} ms`,
     `Browser callback cadence: ${formatMetric(presentation.refreshRateFps, 0)} callbacks/s estimated | missed callback slots: ${missedSummary}`,

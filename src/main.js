@@ -49,6 +49,7 @@ const preferredRenderCap = nativeSustainProfile
   ? null
   : readRenderCapPreference(query);
 const renderPacer = createRenderPacer(preferredRenderCap);
+const adaptiveTargetFrameRate = Math.min(preferredRenderCap ?? 60, 60);
 const loading = createLoadingController(app);
 loading.setStage(0.10, 'Building ocean surface');
 const preferredRenderer = readRendererPreference(query);
@@ -90,6 +91,7 @@ const gpuClass = harnessMode
   && ['software', 'integrated', 'unknown', 'discrete'].includes(harnessGpuClass)
   ? harnessGpuClass
   : gpu.gpuClass;
+const gpuFrameTimer = createGpuFrameTimer(renderer);
 const adaptiveQuality = createAdaptiveQuality({
   width: window.innerWidth,
   height: window.innerHeight,
@@ -97,9 +99,10 @@ const adaptiveQuality = createAdaptiveQuality({
   gpuClass,
   rendererName: gpu.renderer,
   lockedPixelRatio: nativeSustainProfile ? 1 : null,
+  gpuTimingEnabled: !harnessMode && gpuFrameTimer.supported,
+  targetFrameRate: adaptiveTargetFrameRate,
 });
 const initialQuality = adaptiveQuality.getState();
-const gpuFrameTimer = createGpuFrameTimer(renderer);
 const presentationMonitor = createPresentationMonitor();
 const renderMonitor = createPresentationMonitor();
 
@@ -197,6 +200,13 @@ function applyRenderQuality() {
   camera.updateProjectionMatrix();
 }
 
+function applyAdaptiveQualityChange() {
+  applyRenderQuality();
+  gpuFrameTimer.reset();
+  adaptiveQuality.resetFrameSampling();
+  adaptiveQuality.resetGpuSampling();
+}
+
 function resize() {
   adaptiveQuality.resize(
     window.innerWidth,
@@ -204,6 +214,7 @@ function resize() {
     window.devicePixelRatio,
   );
   applyRenderQuality();
+  gpuFrameTimer.reset();
 }
 
 window.addEventListener('resize', resize, { passive: true });
@@ -244,6 +255,7 @@ const sustainCpuFrameTimes = [];
 
 function resetPerformanceSampling() {
   adaptiveQuality.resetFrameSampling();
+  adaptiveQuality.resetGpuSampling();
   gpuFrameTimer.reset();
   presentationMonitor.reset();
   renderMonitor.reset();
@@ -504,6 +516,7 @@ if (!nativeSustainProfile) {
     initialCap: renderPacer.getCap(),
     onChange(nextCap) {
       renderPacer.setCap(nextCap);
+      adaptiveQuality.setTargetFrameRate(Math.min(nextCap ?? 60, 60));
       const nextUrl = new URL(window.location.href);
       if (nextCap === null) nextUrl.searchParams.delete(RENDER_CAP_QUERY);
       else nextUrl.searchParams.set(RENDER_CAP_QUERY, String(nextCap));
@@ -651,8 +664,13 @@ async function start() {
     renderPacer.reset();
     renderer.setAnimationLoop((timestamp) => {
       presentationMonitor.recordFrame(timestamp);
-      if (!document.hidden && adaptiveQuality.observeFrame(timestamp)) {
-        applyRenderQuality();
+      if (!document.hidden) {
+        const changedFromGpuTiming = adaptiveQuality.sampleGpuTiming(
+          gpuFrameTimer.getState(),
+        );
+        const qualityChanged = changedFromGpuTiming
+          || adaptiveQuality.observeFrame(timestamp);
+        if (qualityChanged) applyAdaptiveQualityChange();
       }
       if (!renderPacer.shouldRender(timestamp)) return;
 

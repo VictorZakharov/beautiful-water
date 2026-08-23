@@ -138,6 +138,12 @@ describe('rolling presentation monitor', () => {
         shadowMapResolution: 2048,
         shadowFrameInterval: 1,
         revision: 3,
+        gpuTimingEnabled: true,
+        gpuTargetFps: 60,
+        gpuP95BudgetMs: 15,
+        gpuTimingStatus: 'headroom',
+        gpuMedianFrameTimeMs: 2.06,
+        gpuP95FrameTimeMs: 2.82,
       },
       scene: 'surface',
       drawCalls: 42,
@@ -165,6 +171,10 @@ describe('rolling presentation monitor', () => {
     expect(report).toContain('1% low');
     expect(report).toContain('CPU frame work: p50 1.50 ms');
     expect(report).toContain('p50 2.06 ms | p95 2.82 ms');
+    expect(report).toContain(
+      'Adaptive quality: GPU pass timing / 60 FPS target | headroom '
+        + '| p95 limit 15.00 ms | last p50 2.06 ms / p95 2.82 ms',
+    );
     expect(report).toContain('webgpu pipeline / webgpu backend');
     expect(report).toContain('3840x2160 drawing buffer');
     expect(report).toContain('NVIDIA RTX 4070 Ti');

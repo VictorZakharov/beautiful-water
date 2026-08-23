@@ -60,7 +60,7 @@ refining the `eh` estimator while the live demo remains available for direct vis
 - Above-water and underwater rendering states reached continuously by orbiting through the
   animated surface, plus a responsive loading screen, rolling GPU-pass timing, and a 15-second
   rendered-FPS history. Clicking the performance panel copies a complete diagnostic report.
-- GPU-aware render budgets, high-density antialiasing policy, and frame-time adaptation keep
+- GPU-aware render budgets, high-density antialiasing policy, and GPU-pass p95 feedback keep
   4K displays practical without changing the CSS resolution or the default 1080p presentation.
 - Native WebGPU/TSL and legacy WebGL/GLSL water pipelines share the same wave spectrum, scene,
   controls, simulation clock, and quality controller. Backend-only code is loaded on demand so
@@ -84,11 +84,13 @@ Open the local URL printed by Vite.
 - Use the upper-right render-cap selector to limit actual GPU submissions to 30, 60, 120, 144,
   or 240 FPS. The selection is saved locally; `Off` renders once per browser animation callback.
   A cap is a maximum workload rate, not a guarantee that a slow GPU or physical panel can meet it.
+- When timestamp queries are available, adaptive quality reserves GPU headroom for a 60 FPS target,
+  or for a lower selected cap. Browser callback cadence remains the fallback on unsupported GPUs.
 - Click the upper-left performance graph to copy the latest 15-second diagnostic report. It labels
   actual rendered FPS separately from browser animation callback rate, reports the selected cap and
   whether the browser sees multiple screens, and states that physical panel Hz is unavailable to
   the page. It also includes a readable browser/platform summary plus the raw compatibility user
-  agent and per-frame renderer statistics.
+  agent, adaptive-quality GPU decision, and per-frame renderer statistics.
 
 Panning and cursor-offset zoom are intentionally disabled so the buoy remains the stable focal
 point.
@@ -111,7 +113,8 @@ wasting software-GPU time on intermediate frames. Coverage includes:
 - loading-stage order, progress monotonicity, frame cadence, shader warm-up, and browser errors;
 - rolling rendered-FPS history, saved render-cap behavior, runtime identity, per-frame renderer
   statistics, and click-to-copy performance-report contents;
-- 4K framebuffer budgets, integrated/discrete GPU policy, and adaptive quality recovery;
+- 4K framebuffer budgets, integrated/discrete GPU policy, GPU-overload downshifts, and guarded
+  adaptive quality recovery;
 - WebGPU/WebGL selection, fallback diagnostics, shared wave geometry, and side-by-side parity;
 - displacement-field correlation at three simulation times to prevent periodic tiling from
   returning unnoticed.
