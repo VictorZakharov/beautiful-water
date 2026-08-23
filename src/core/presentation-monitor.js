@@ -326,7 +326,7 @@ export function formatPerformanceReport({
     : `collecting ${gpu.sampleCount} samples (${formatMetric(gpu.windowElapsedMs / 1000, 1)} / ${formatMetric(gpuWindowSeconds, 1)} s)`;
   const missedSummary = Number.isFinite(presentation.missedRefreshes)
     ? `${presentation.missedRefreshes} estimated (${formatMetric(presentation.missedRefreshRate * 100, 2)}%)`
-    : 'unavailable until presentation cadence is detected';
+    : 'unavailable until browser callback cadence is detected';
   const browserSummary = runtime?.browser || 'Unknown browser';
   const platformName = runtime?.platform || 'Unknown platform';
   const platformSummary = runtime?.exactPlatformVersion
@@ -338,10 +338,11 @@ export function formatPerformanceReport({
     'Beautiful Water performance report',
     `Captured: ${capturedAt}`,
     `Window: last ${formatMetric(measuredSeconds, 2)} s of ${formatMetric(presentation.windowDurationMs / 1000, 0)} s`,
-    `Presented FPS: ${formatMetric(presentation.averageFps, 2)} average | ${formatMetric(presentation.currentFps, 2)} current | ${formatMetric(presentation.onePercentLowFps, 2)} 1% low | ${formatMetric(presentation.worstOneSecondFps, 2)} worst 1 s`,
+    `Animation-loop FPS: ${formatMetric(presentation.averageFps, 2)} average | ${formatMetric(presentation.currentFps, 2)} current | ${formatMetric(presentation.onePercentLowFps, 2)} 1% low | ${formatMetric(presentation.worstOneSecondFps, 2)} worst 1 s`,
     `Frame time: p50 ${formatMetric(presentation.p50FrameTimeMs)} ms | p95 ${formatMetric(presentation.p95FrameTimeMs)} ms | p99 ${formatMetric(presentation.p99FrameTimeMs)} ms | worst ${formatMetric(presentation.worstFrameTimeMs)} ms`,
     `CPU frame work: p50 ${formatMetric(presentation.cpuFrame.p50Ms)} ms | p95 ${formatMetric(presentation.cpuFrame.p95Ms)} ms | p99 ${formatMetric(presentation.cpuFrame.p99Ms)} ms | worst ${formatMetric(presentation.cpuFrame.worstMs)} ms | ${presentation.cpuFrame.sampleCount} samples`,
-    `Browser presentation cadence: ${formatMetric(presentation.refreshRateFps, 0)} FPS estimated | missed presentation slots: ${missedSummary}`,
+    `Browser callback cadence: ${formatMetric(presentation.refreshRateFps, 0)} callbacks/s estimated | missed callback slots: ${missedSummary}`,
+    'Physical monitor refresh: unavailable to this page; callback cadence is not a panel measurement',
     `GPU pass (rolling ${formatMetric(gpuWindowSeconds, 0)} s): ${gpuSummary}`,
     `Renderer: ${renderer.pipeline} pipeline / ${renderer.backend} backend / ${renderer.adapter || 'unknown adapter'}`,
     `Canvas: ${canvas.drawingBufferWidth}x${canvas.drawingBufferHeight} drawing buffer / ${canvas.cssWidth}x${canvas.cssHeight} CSS px`,

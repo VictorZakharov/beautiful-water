@@ -161,8 +161,13 @@ describe('rolling presentation monitor', () => {
     expect(report).toContain('webgpu pipeline / webgpu backend');
     expect(report).toContain('3840x2160 drawing buffer');
     expect(report).toContain('NVIDIA RTX 4070 Ti');
-    expect(report).toContain('Browser presentation cadence: 60 FPS estimated');
-    expect(report).toContain('missed presentation slots: 0 estimated');
+    expect(report).toContain('Animation-loop FPS: 60.00 average');
+    expect(report).toContain('Browser callback cadence: 60 callbacks/s estimated');
+    expect(report).toContain('missed callback slots: 0 estimated');
+    expect(report).toContain(
+      'Physical monitor refresh: unavailable to this page; '
+        + 'callback cadence is not a panel measurement',
+    );
     expect(report).toContain('frame draw calls 42 | frame triangles 123456');
     expect(report).toContain('Page state: visible | focused | DPR 2.00');
     expect(report).toContain(

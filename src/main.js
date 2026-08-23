@@ -360,7 +360,7 @@ function updatePresentationHud(presentation) {
   fpsLowValue.textContent = formatHudFps(presentation.onePercentLowFps);
   fpsHistory.setAttribute(
     'aria-label',
-    `Presented FPS over the last ${(presentation.windowElapsedMs / 1000).toFixed(1)} seconds: ${formatHudFps(presentation.averageFps)} average, ${formatHudFps(presentation.onePercentLowFps)} one-percent low`,
+    `Animation-loop FPS over the last ${(presentation.windowElapsedMs / 1000).toFixed(1)} seconds: ${formatHudFps(presentation.averageFps)} average, ${formatHudFps(presentation.onePercentLowFps)} one-percent low`,
   );
   const hasFrameDrop = presentation.windowElapsedMs >= 2_000
     && Number.isFinite(presentation.worstOneSecondFps)

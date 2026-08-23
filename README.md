@@ -59,7 +59,7 @@ refining the `eh` estimator while the live demo remains available for direct vis
   curiosity, habituation, and escape responses to a moving underwater camera.
 - Above-water and underwater rendering states reached continuously by orbiting through the
   animated surface, plus a responsive loading screen, rolling GPU-pass timing, and a 15-second
-  presented-FPS history. Clicking the performance panel copies a complete diagnostic report.
+  animation-loop FPS history. Clicking the performance panel copies a complete diagnostic report.
 - GPU-aware render budgets, high-density antialiasing policy, and frame-time adaptation keep
   4K displays practical without changing the CSS resolution or the default 1080p presentation.
 - Native WebGPU/TSL and legacy WebGL/GLSL water pipelines share the same wave spectrum, scene,
@@ -81,10 +81,10 @@ Open the local URL printed by Vite.
 - Wheel: move toward or away from the buoy
 - Orbit beneath the surface to enter the underwater environment
 - Use the upper-right renderer switch to reload in WebGPU or WebGL mode
-- Click the upper-left performance graph to copy the latest 15-second diagnostic report. It
-  distinguishes browser presentation cadence from physical monitor refresh, includes a readable
-  browser/platform summary plus the raw compatibility user agent, and reports per-frame renderer
-  statistics.
+- Click the upper-left performance graph to copy the latest 15-second diagnostic report. It labels
+  the measured browser animation-loop callback cadence and states that physical monitor refresh is
+  unavailable to the page, includes a readable browser/platform summary plus the raw compatibility
+  user agent, and reports per-frame renderer statistics.
 
 Panning and cursor-offset zoom are intentionally disabled so the buoy remains the stable focal
 point.
@@ -105,7 +105,7 @@ wasting software-GPU time on intermediate frames. Coverage includes:
 - foam formation, transition, replacement, and long-interval transport;
 - general underwater rendering plus calm, curious, and startled fish behavior;
 - loading-stage order, progress monotonicity, frame cadence, shader warm-up, and browser errors;
-- rolling presentation history, runtime identity, per-frame renderer statistics, and
+- rolling animation-loop history, runtime identity, per-frame renderer statistics, and
   click-to-copy performance-report contents;
 - 4K framebuffer budgets, integrated/discrete GPU policy, and adaptive quality recovery;
 - WebGPU/WebGL selection, fallback diagnostics, shared wave geometry, and side-by-side parity;
@@ -124,7 +124,7 @@ bun run performance:sustain-4k
 
 Screenshots, side-by-side composites, pixel metrics, camera and renderer diagnostics,
 wave-correlation measurements, and startup timing are written to `visual-results/`. The optional
-profile adds presented FPS plus rolling 10-second GPU render-pass p50/p95
+profile adds animation-loop FPS plus rolling 10-second GPU render-pass p50/p95
 measurements to `runtime-timings.json`. Each renderer/resolution case runs in
 a fresh browser process so GPU state cannot leak between samples. Set
 `PERFORMANCE_VIEWPORT` to `1080p`, `1440p`, or `4K`, and
@@ -134,11 +134,12 @@ a fresh browser process so GPU state cannot leak between samples. Set
 The native-4K sustain gate is the stricter throughput proof. It locks WebGPU to an exact
 3840-by-2160 drawing buffer and the high-quality capture/shadow settings, warms up for 10 seconds,
 then measures both the surface and underwater views for 30 seconds each in fresh browser
-processes. It fails if the canvas or quality revision changes, actual presentation falls below
-99.5% of the requested refresh rate, more than 0.5% of refreshes are missed, presentation-tail,
-CPU-submit, or GPU-pass budgets are exceeded, or the browser reports an error. The complete
+processes. It fails if the canvas or quality revision changes, observed animation-loop throughput
+falls below 99.5% of the requested callback target, more than 0.5% of callback slots are missed,
+frame-interval-tail, CPU-submit, or GPU-pass budgets are exceeded, or the browser reports an error.
+The complete
 per-view evidence is written to `visual-results/native-4k-sustain.json`; change the default
-144 Hz target with `PERFORMANCE_TARGET_FPS` when validating a different display.
+144 FPS target with `PERFORMANCE_TARGET_FPS` when validating a different callback budget.
 
 ## Production and GitHub Pages
 
