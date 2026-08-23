@@ -317,7 +317,7 @@ export function formatPerformanceReport({
   triangles,
   pageState,
   pageUrl,
-  userAgent,
+  runtime,
 }) {
   const measuredSeconds = presentation.windowElapsedMs / 1000;
   const gpuWindowSeconds = gpu.windowDurationMs / 1000;
@@ -326,7 +326,13 @@ export function formatPerformanceReport({
     : `collecting ${gpu.sampleCount} samples (${formatMetric(gpu.windowElapsedMs / 1000, 1)} / ${formatMetric(gpuWindowSeconds, 1)} s)`;
   const missedSummary = Number.isFinite(presentation.missedRefreshes)
     ? `${presentation.missedRefreshes} estimated (${formatMetric(presentation.missedRefreshRate * 100, 2)}%)`
-    : 'unavailable until refresh rate is detected';
+    : 'unavailable until presentation cadence is detected';
+  const browserSummary = runtime?.browser || 'Unknown browser';
+  const platformName = runtime?.platform || 'Unknown platform';
+  const platformSummary = runtime?.exactPlatformVersion
+    ? `${platformName} ${runtime.exactPlatformVersion}`
+    : `${platformName} (exact OS version unavailable to this page)`;
+  const rawUserAgent = runtime?.rawUserAgent || 'Unavailable';
 
   return [
     'Beautiful Water performance report',
@@ -335,14 +341,15 @@ export function formatPerformanceReport({
     `Presented FPS: ${formatMetric(presentation.averageFps, 2)} average | ${formatMetric(presentation.currentFps, 2)} current | ${formatMetric(presentation.onePercentLowFps, 2)} 1% low | ${formatMetric(presentation.worstOneSecondFps, 2)} worst 1 s`,
     `Frame time: p50 ${formatMetric(presentation.p50FrameTimeMs)} ms | p95 ${formatMetric(presentation.p95FrameTimeMs)} ms | p99 ${formatMetric(presentation.p99FrameTimeMs)} ms | worst ${formatMetric(presentation.worstFrameTimeMs)} ms`,
     `CPU frame work: p50 ${formatMetric(presentation.cpuFrame.p50Ms)} ms | p95 ${formatMetric(presentation.cpuFrame.p95Ms)} ms | p99 ${formatMetric(presentation.cpuFrame.p99Ms)} ms | worst ${formatMetric(presentation.cpuFrame.worstMs)} ms | ${presentation.cpuFrame.sampleCount} samples`,
-    `Estimated refresh: ${formatMetric(presentation.refreshRateFps, 0)} Hz | missed refreshes: ${missedSummary}`,
+    `Browser presentation cadence: ${formatMetric(presentation.refreshRateFps, 0)} FPS estimated | missed presentation slots: ${missedSummary}`,
     `GPU pass (rolling ${formatMetric(gpuWindowSeconds, 0)} s): ${gpuSummary}`,
     `Renderer: ${renderer.pipeline} pipeline / ${renderer.backend} backend / ${renderer.adapter || 'unknown adapter'}`,
     `Canvas: ${canvas.drawingBufferWidth}x${canvas.drawingBufferHeight} drawing buffer / ${canvas.cssWidth}x${canvas.cssHeight} CSS px`,
     `Quality: ${quality.tier} tier | ${formatMetric(quality.renderScale, 3)} render scale | ${quality.captureResolution} capture | ${quality.shadowMapResolution} shadow map | every ${quality.shadowFrameInterval} frame(s) | revision ${quality.revision}`,
-    `Scene: ${scene} | draw calls ${drawCalls} | triangles ${triangles}`,
+    `Scene: ${scene} | frame draw calls ${drawCalls} | frame triangles ${triangles}`,
     `Page state: ${pageState.visibility} | ${pageState.focused ? 'focused' : 'not focused'} | DPR ${formatMetric(pageState.devicePixelRatio, 2)}`,
     `Page: ${pageUrl}`,
-    `User agent: ${userAgent}`,
+    `Runtime: ${browserSummary} | ${platformSummary}`,
+    `User agent (raw): ${rawUserAgent}`,
   ].join('\n');
 }

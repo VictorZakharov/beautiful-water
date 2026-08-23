@@ -59,14 +59,26 @@ hudTest('graphs presentation history and copies a diagnostic report', async ({ p
   expect(report).toContain('1% low');
   expect(report).toContain('Frame time: p50');
   expect(report).toContain('CPU frame work: p50');
-  expect(report).toContain('Estimated refresh:');
+  expect(report).toContain('Browser presentation cadence:');
+  expect(report).toContain('missed presentation slots:');
   expect(report).toContain('GPU pass (rolling 10 s):');
   expect(report).toContain('Renderer: webgpu pipeline');
   expect(report).toContain('Canvas:');
   expect(report).toContain('Quality:');
-  expect(report).toContain('Scene: surface');
+  expect(report).toContain('Scene: surface | frame draw calls');
+  const frameMetrics = report.match(
+    /Scene: surface \| frame draw calls (\d+) \| frame triangles (\d+)/,
+  );
+  expect(frameMetrics).not.toBeNull();
+  expect(Number(frameMetrics[1])).toBeGreaterThan(0);
+  expect(Number(frameMetrics[1])).toBeLessThan(1_000);
+  expect(Number(frameMetrics[2])).toBeGreaterThan(0);
   expect(report).toContain('Page state: visible | focused | DPR 1.00');
-  expect(report).toContain('User agent:');
+  expect(report).toContain('Runtime:');
+  expect(report).not.toContain('Runtime: Unknown browser');
+  expect(report).not.toContain('| Unknown platform');
+  expect(report).toContain('exact OS version unavailable to this page');
+  expect(report).toContain('User agent (raw):');
   expect(report).not.toContain('undefined');
   await expect(page.locator('[data-performance-copy]')).toHaveText(
     'COPIED 15S REPORT',

@@ -145,7 +145,12 @@ describe('rolling presentation monitor', () => {
         devicePixelRatio: 2,
       },
       pageUrl: 'https://example.test/',
-      userAgent: 'Test Browser',
+      runtime: {
+        browser: 'Google Chrome 151',
+        platform: 'Windows',
+        exactPlatformVersion: null,
+        rawUserAgent: 'Test Browser compatibility string',
+      },
     });
 
     expect(report).toContain('Beautiful Water performance report');
@@ -156,7 +161,17 @@ describe('rolling presentation monitor', () => {
     expect(report).toContain('webgpu pipeline / webgpu backend');
     expect(report).toContain('3840x2160 drawing buffer');
     expect(report).toContain('NVIDIA RTX 4070 Ti');
+    expect(report).toContain('Browser presentation cadence: 60 FPS estimated');
+    expect(report).toContain('missed presentation slots: 0 estimated');
+    expect(report).toContain('frame draw calls 42 | frame triangles 123456');
     expect(report).toContain('Page state: visible | focused | DPR 2.00');
+    expect(report).toContain(
+      'Runtime: Google Chrome 151 | Windows '
+        + '(exact OS version unavailable to this page)',
+    );
+    expect(report).toContain(
+      'User agent (raw): Test Browser compatibility string',
+    );
     expect(report).not.toContain('undefined');
     expect(report.split('\n').length).toBeGreaterThan(10);
   });

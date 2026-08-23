@@ -81,7 +81,10 @@ Open the local URL printed by Vite.
 - Wheel: move toward or away from the buoy
 - Orbit beneath the surface to enter the underwater environment
 - Use the upper-right renderer switch to reload in WebGPU or WebGL mode
-- Click the upper-left performance graph to copy the latest 15-second diagnostic report
+- Click the upper-left performance graph to copy the latest 15-second diagnostic report. It
+  distinguishes browser presentation cadence from physical monitor refresh, includes a readable
+  browser/platform summary plus the raw compatibility user agent, and reports per-frame renderer
+  statistics.
 
 Panning and cursor-offset zoom are intentionally disabled so the buoy remains the stable focal
 point.
@@ -102,7 +105,8 @@ wasting software-GPU time on intermediate frames. Coverage includes:
 - foam formation, transition, replacement, and long-interval transport;
 - general underwater rendering plus calm, curious, and startled fish behavior;
 - loading-stage order, progress monotonicity, frame cadence, shader warm-up, and browser errors;
-- rolling presentation history and click-to-copy performance-report contents;
+- rolling presentation history, runtime identity, per-frame renderer statistics, and
+  click-to-copy performance-report contents;
 - 4K framebuffer budgets, integrated/discrete GPU policy, and adaptive quality recovery;
 - WebGPU/WebGL selection, fallback diagnostics, shared wave geometry, and side-by-side parity;
 - displacement-field correlation at three simulation times to prevent periodic tiling from

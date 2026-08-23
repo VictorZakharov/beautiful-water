@@ -11,7 +11,9 @@ import {
   createPresentationMonitor,
   formatPerformanceReport,
 } from './core/presentation-monitor.js';
+import { readRendererFrameDiagnostics } from './core/renderer-diagnostics.js';
 import { createRenderer, readRendererPreference } from './core/renderer.js';
+import { describeRuntimeIdentity } from './core/runtime-identity.js';
 import { createBuoy } from './scene/buoy.js';
 import { createEnvironment, seabedHeight } from './scene/environment.js';
 import { createFishSchools } from './scene/fish.js';
@@ -32,6 +34,7 @@ const fpsAverageValue = document.querySelector('[data-fps-average]');
 const fpsLowValue = document.querySelector('[data-fps-low]');
 const performanceCopyLabel = document.querySelector('[data-performance-copy]');
 const query = new URLSearchParams(window.location.search);
+const runtimeIdentity = describeRuntimeIdentity(navigator);
 const harnessMode = query.has('harness');
 const nativeSustainProfile = !harnessMode
   && query.get('sustain') === 'native-4k';
@@ -317,16 +320,14 @@ function renderOceanCaptures(pass = 'both') {
 
 function renderScene() {
   renderer.render(scene, camera);
-  lastFrameDiagnostics = {
-    drawCalls: renderer.info.render.calls,
-    triangles: renderer.info.render.triangles,
-  };
   if (!harnessMode || harnessUnderwaterRaysEnabled) {
     underwaterRays.render(renderer);
   }
+  lastFrameDiagnostics = readRendererFrameDiagnostics(renderer);
 }
 
 function renderFrame(elapsed) {
+  renderer.info.reset();
   gpuFrameTimer.beginFrame();
   try {
     const quality = adaptiveQuality.getState();
@@ -447,7 +448,7 @@ function buildPerformanceReport() {
       devicePixelRatio: window.devicePixelRatio,
     },
     pageUrl: window.location.href,
-    userAgent: navigator.userAgent,
+    runtime: runtimeIdentity,
   });
 }
 
