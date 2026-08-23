@@ -32,6 +32,7 @@ const fpsHistory = document.querySelector('[data-fps-history]');
 const fpsHistoryLine = document.querySelector('[data-fps-history-line]');
 const fpsAverageValue = document.querySelector('[data-fps-average]');
 const fpsLowValue = document.querySelector('[data-fps-low]');
+const displayNote = document.querySelector('[data-display-note]');
 const performanceCopyLabel = document.querySelector('[data-performance-copy]');
 const query = new URLSearchParams(window.location.search);
 const runtimeIdentity = describeRuntimeIdentity(navigator);
@@ -349,6 +350,19 @@ function formatHudFps(fps) {
   return fps < 20 ? fps.toFixed(1) : String(Math.round(fps));
 }
 
+function readMultipleScreenState() {
+  return typeof window.screen?.isExtended === 'boolean'
+    ? window.screen.isExtended
+    : null;
+}
+
+function updateDisplayNote() {
+  const multipleScreens = readMultipleScreenState();
+  displayNote.textContent = multipleScreens === true
+    ? 'MULTI-SCREEN / PANEL HZ UNKNOWN'
+    : 'PANEL HZ UNKNOWN';
+}
+
 function updatePresentationHud(presentation) {
   const targetFps = presentation.refreshRateFps
     ?? Math.max(60, presentation.averageFps ?? 0);
@@ -360,7 +374,7 @@ function updatePresentationHud(presentation) {
   fpsLowValue.textContent = formatHudFps(presentation.onePercentLowFps);
   fpsHistory.setAttribute(
     'aria-label',
-    `Animation-loop FPS over the last ${(presentation.windowElapsedMs / 1000).toFixed(1)} seconds: ${formatHudFps(presentation.averageFps)} average, ${formatHudFps(presentation.onePercentLowFps)} one-percent low`,
+    `Browser animation callbacks per second over the last ${(presentation.windowElapsedMs / 1000).toFixed(1)} seconds: ${formatHudFps(presentation.averageFps)} average, ${formatHudFps(presentation.onePercentLowFps)} one-percent low`,
   );
   const hasFrameDrop = presentation.windowElapsedMs >= 2_000
     && Number.isFinite(presentation.worstOneSecondFps)
@@ -446,11 +460,15 @@ function buildPerformanceReport() {
       visibility: document.visibilityState,
       focused: document.hasFocus(),
       devicePixelRatio: window.devicePixelRatio,
+      multipleScreens: readMultipleScreenState(),
     },
     pageUrl: window.location.href,
     runtime: runtimeIdentity,
   });
 }
+
+updateDisplayNote();
+window.screen?.addEventListener?.('change', updateDisplayNote);
 
 let copyFeedbackTimer = null;
 performancePanel.addEventListener('click', async () => {

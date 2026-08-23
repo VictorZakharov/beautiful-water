@@ -333,16 +333,25 @@ export function formatPerformanceReport({
     ? `${platformName} ${runtime.exactPlatformVersion}`
     : `${platformName} (exact OS version unavailable to this page)`;
   const rawUserAgent = runtime?.rawUserAgent || 'Unavailable';
+  const displayTopology = pageState.multipleScreens === true
+    ? 'multiple screens reported'
+    : pageState.multipleScreens === false
+      ? 'single screen reported'
+      : 'screen count unavailable';
+  const timingCaveat = pageState.multipleScreens === true
+    ? 'Timing caveat: callback cadence is not a panel measurement and may follow another screen'
+    : 'Timing caveat: callback cadence is not a panel measurement';
 
   return [
     'Beautiful Water performance report',
     `Captured: ${capturedAt}`,
     `Window: last ${formatMetric(measuredSeconds, 2)} s of ${formatMetric(presentation.windowDurationMs / 1000, 0)} s`,
-    `Animation-loop FPS: ${formatMetric(presentation.averageFps, 2)} average | ${formatMetric(presentation.currentFps, 2)} current | ${formatMetric(presentation.onePercentLowFps, 2)} 1% low | ${formatMetric(presentation.worstOneSecondFps, 2)} worst 1 s`,
-    `Frame time: p50 ${formatMetric(presentation.p50FrameTimeMs)} ms | p95 ${formatMetric(presentation.p95FrameTimeMs)} ms | p99 ${formatMetric(presentation.p99FrameTimeMs)} ms | worst ${formatMetric(presentation.worstFrameTimeMs)} ms`,
+    `Browser animation callbacks: ${formatMetric(presentation.averageFps, 2)}/s average | ${formatMetric(presentation.currentFps, 2)}/s current | ${formatMetric(presentation.onePercentLowFps, 2)}/s 1% low | ${formatMetric(presentation.worstOneSecondFps, 2)}/s worst 1 s`,
+    `Callback interval: p50 ${formatMetric(presentation.p50FrameTimeMs)} ms | p95 ${formatMetric(presentation.p95FrameTimeMs)} ms | p99 ${formatMetric(presentation.p99FrameTimeMs)} ms | worst ${formatMetric(presentation.worstFrameTimeMs)} ms`,
     `CPU frame work: p50 ${formatMetric(presentation.cpuFrame.p50Ms)} ms | p95 ${formatMetric(presentation.cpuFrame.p95Ms)} ms | p99 ${formatMetric(presentation.cpuFrame.p99Ms)} ms | worst ${formatMetric(presentation.cpuFrame.worstMs)} ms | ${presentation.cpuFrame.sampleCount} samples`,
     `Browser callback cadence: ${formatMetric(presentation.refreshRateFps, 0)} callbacks/s estimated | missed callback slots: ${missedSummary}`,
-    'Physical monitor refresh: unavailable to this page; callback cadence is not a panel measurement',
+    `Display context: ${displayTopology} | physical panel Hz unavailable to this page`,
+    timingCaveat,
     `GPU pass (rolling ${formatMetric(gpuWindowSeconds, 0)} s): ${gpuSummary}`,
     `Renderer: ${renderer.pipeline} pipeline / ${renderer.backend} backend / ${renderer.adapter || 'unknown adapter'}`,
     `Canvas: ${canvas.drawingBufferWidth}x${canvas.drawingBufferHeight} drawing buffer / ${canvas.cssWidth}x${canvas.cssHeight} CSS px`,

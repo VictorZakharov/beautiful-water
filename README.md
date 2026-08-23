@@ -59,7 +59,7 @@ refining the `eh` estimator while the live demo remains available for direct vis
   curiosity, habituation, and escape responses to a moving underwater camera.
 - Above-water and underwater rendering states reached continuously by orbiting through the
   animated surface, plus a responsive loading screen, rolling GPU-pass timing, and a 15-second
-  animation-loop FPS history. Clicking the performance panel copies a complete diagnostic report.
+  browser callback-rate history. Clicking the performance panel copies a complete diagnostic report.
 - GPU-aware render budgets, high-density antialiasing policy, and frame-time adaptation keep
   4K displays practical without changing the CSS resolution or the default 1080p presentation.
 - Native WebGPU/TSL and legacy WebGL/GLSL water pipelines share the same wave spectrum, scene,
@@ -82,9 +82,9 @@ Open the local URL printed by Vite.
 - Orbit beneath the surface to enter the underwater environment
 - Use the upper-right renderer switch to reload in WebGPU or WebGL mode
 - Click the upper-left performance graph to copy the latest 15-second diagnostic report. It labels
-  the measured browser animation-loop callback cadence and states that physical monitor refresh is
-  unavailable to the page, includes a readable browser/platform summary plus the raw compatibility
-  user agent, and reports per-frame renderer statistics.
+  the measured browser animation callback rate, reports whether the browser sees multiple screens,
+  and states that physical panel Hz is unavailable to the page. It also includes a readable
+  browser/platform summary plus the raw compatibility user agent and per-frame renderer statistics.
 
 Panning and cursor-offset zoom are intentionally disabled so the buoy remains the stable focal
 point.
@@ -124,7 +124,7 @@ bun run performance:sustain-4k
 
 Screenshots, side-by-side composites, pixel metrics, camera and renderer diagnostics,
 wave-correlation measurements, and startup timing are written to `visual-results/`. The optional
-profile adds animation-loop FPS plus rolling 10-second GPU render-pass p50/p95
+profile adds browser animation callback rate plus rolling 10-second GPU render-pass p50/p95
 measurements to `runtime-timings.json`. Each renderer/resolution case runs in
 a fresh browser process so GPU state cannot leak between samples. Set
 `PERFORMANCE_VIEWPORT` to `1080p`, `1440p`, or `4K`, and
@@ -139,7 +139,7 @@ falls below 99.5% of the requested callback target, more than 0.5% of callback s
 frame-interval-tail, CPU-submit, or GPU-pass budgets are exceeded, or the browser reports an error.
 The complete
 per-view evidence is written to `visual-results/native-4k-sustain.json`; change the default
-144 FPS target with `PERFORMANCE_TARGET_FPS` when validating a different callback budget.
+144 callbacks/s target with `PERFORMANCE_TARGET_FPS` when validating a different callback budget.
 
 ## Production and GitHub Pages
 

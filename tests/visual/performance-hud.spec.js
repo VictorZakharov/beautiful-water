@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 const visualSuite = process.env.VISUAL_SUITE ?? 'all';
 const hudTest = ['all', 'ci-scene'].includes(visualSuite) ? test : test.skip;
 
-hudTest('graphs animation-loop history and copies a diagnostic report', async ({ page }) => {
+hudTest('graphs browser callback history and copies a diagnostic report', async ({ page }) => {
   const browserErrors = [];
   page.on('console', (message) => {
     if (message.type() === 'error') {
@@ -44,8 +44,9 @@ hudTest('graphs animation-loop history and copies a diagnostic report', async ({
   await expect(page.locator('[data-fps-low]')).not.toHaveText('--');
   await expect(page.locator('[data-fps-history]')).toHaveAttribute(
     'aria-label',
-    /Animation-loop FPS over the last/,
+    /Browser animation callbacks per second over the last/,
   );
+  await expect(page.locator('[data-display-note]')).toContainText('PANEL HZ UNKNOWN');
 
   await panel.click();
   await page.waitForFunction(() => (
@@ -55,13 +56,14 @@ hudTest('graphs animation-loop history and copies a diagnostic report', async ({
     () => window.__COPIED_PERFORMANCE_REPORT__,
   );
   expect(report).toContain('Beautiful Water performance report');
-  expect(report).toContain('Animation-loop FPS:');
+  expect(report).toContain('Browser animation callbacks:');
   expect(report).toContain('1% low');
-  expect(report).toContain('Frame time: p50');
+  expect(report).toContain('Callback interval: p50');
   expect(report).toContain('CPU frame work: p50');
   expect(report).toContain('Browser callback cadence:');
   expect(report).toContain('missed callback slots:');
-  expect(report).toContain('Physical monitor refresh: unavailable to this page');
+  expect(report).toContain('physical panel Hz unavailable to this page');
+  expect(report).toContain('callback cadence is not a panel measurement');
   expect(report).toContain('GPU pass (rolling 10 s):');
   expect(report).toContain('Renderer: webgpu pipeline');
   expect(report).toContain('Canvas:');
