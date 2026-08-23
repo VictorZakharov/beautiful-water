@@ -1,4 +1,15 @@
 const MEGAPIXEL = 1_000_000;
+const DEFAULT_TARGET_FPS = 60;
+// Timestamp queries resolve sparsely. Three fresh samples are enough to react
+// within a few seconds while the repeated-sample rules reject a lone tail.
+const GPU_TIMING_MIN_SAMPLES = 3;
+// Leave compositor and non-render-pass work outside the measured GPU budget.
+const GPU_P95_BUDGET_RATIO = 0.90;
+const GPU_SEVERE_P95_RATIO = 1.35;
+const GPU_SEVERE_MEDIAN_RATIO = 0.90;
+const GPU_RECOVERY_P95_RATIO = 0.70;
+const GPU_RECOVERY_MEDIAN_RATIO = 0.60;
+const GPU_RECOVERY_SAMPLES = 3;
 
 export const GPU_PIXEL_BUDGETS = Object.freeze({
   software: Object.freeze({ minimum: 0.85, initial: 1.45, maximum: 1.85 }),
@@ -14,6 +25,12 @@ const INTEGRATED_RENDERER = /\b(?:intel|iris|uhd|hd graphics|vega|radeon\(tm\) g
 
 function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
+}
+
+function normalizeTargetFrameRate(value) {
+  return Number.isFinite(value) && value > 0
+    ? clamp(value, 15, 240)
+    : DEFAULT_TARGET_FPS;
 }
 
 function cappedDevicePixelRatio(width, devicePixelRatio) {
@@ -93,9 +110,12 @@ export function createAdaptiveQuality({
   rendererName = 'Unknown WebGL renderer',
   enabled = true,
   lockedPixelRatio = null,
+  gpuTimingEnabled = false,
+  targetFrameRate = DEFAULT_TARGET_FPS,
 } = {}) {
   const qualityLocked = Number.isFinite(lockedPixelRatio)
     && lockedPixelRatio > 0;
+  const usesGpuTiming = Boolean(gpuTimingEnabled);
   const budgets = GPU_PIXEL_BUDGETS[gpuClass] ?? GPU_PIXEL_BUDGETS.unknown;
   let viewportWidth = Math.max(1, width ?? 1);
   let viewportHeight = Math.max(1, height ?? 1);
@@ -126,6 +146,36 @@ export function createAdaptiveQuality({
   let fastWindows = 0;
   let cooldownWindows = 0;
   let revision = 0;
+  let gpuTargetFps = normalizeTargetFrameRate(targetFrameRate);
+  let gpuTimingStatus = usesGpuTiming ? 'collecting' : 'unavailable';
+  let gpuMedianFrameTimeMs = null;
+  let gpuP95FrameTimeMs = null;
+  let lastGpuTimingRevision = null;
+  let gpuSlowSamples = 0;
+  let gpuFastSamples = 0;
+  let learnedMaximumPixelBudget = Infinity;
+
+  function minimumPixelBudget() {
+    return Math.min(budgets.minimum * MEGAPIXEL, nativePixelCount());
+  }
+
+  function maximumPixelBudget() {
+    return Math.min(
+      budgets.maximum * MEGAPIXEL,
+      nativePixelCount(),
+      learnedMaximumPixelBudget,
+    );
+  }
+
+  function resetGpuSampling({ forgetLearnedLimit = false } = {}) {
+    gpuTimingStatus = usesGpuTiming ? 'collecting' : 'unavailable';
+    gpuMedianFrameTimeMs = null;
+    gpuP95FrameTimeMs = null;
+    lastGpuTimingRevision = null;
+    gpuSlowSamples = 0;
+    gpuFastSamples = 0;
+    if (forgetLearnedLimit) learnedMaximumPixelBudget = Infinity;
+  }
 
   function state() {
     const nativePixelRatio = cappedDevicePixelRatio(
@@ -165,10 +215,22 @@ export function createAdaptiveQuality({
         : pixelBudget,
       minimumPixelBudget: Math.min(budgets.minimum * MEGAPIXEL, nativePixels),
       maximumPixelBudget: Math.min(budgets.maximum * MEGAPIXEL, nativePixels),
+      learnedMaximumPixelBudget: Math.min(
+        budgets.maximum * MEGAPIXEL,
+        nativePixels,
+        learnedMaximumPixelBudget,
+      ),
       captureResolution: captureResolutionFor(tier, gpuClass),
       shadowMapResolution: shadowResolutionFor(tier, gpuClass),
       shadowFrameInterval: tier === 'performance' ? 2 : 1,
       smoothedFps,
+      gpuTimingEnabled: usesGpuTiming,
+      gpuTargetFps,
+      gpuFrameBudgetMs: 1000 / gpuTargetFps,
+      gpuP95BudgetMs: (1000 / gpuTargetFps) * GPU_P95_BUDGET_RATIO,
+      gpuTimingStatus,
+      gpuMedianFrameTimeMs,
+      gpuP95FrameTimeMs,
     };
   }
 
@@ -186,7 +248,7 @@ export function createAdaptiveQuality({
     if (smoothedFps < 39) {
       slowWindows += 1;
       fastWindows = 0;
-    } else if (smoothedFps > 56) {
+    } else if (smoothedFps > 56 && !usesGpuTiming) {
       fastWindows += 1;
       slowWindows = 0;
     } else {
@@ -198,11 +260,7 @@ export function createAdaptiveQuality({
     if ((severeSlowdown || slowWindows >= 2) && cooldownWindows === 0) {
       const previousBudget = pixelBudget;
       const reduction = severeSlowdown ? 0.72 : 0.84;
-      const minimumBudget = Math.min(
-        budgets.minimum * MEGAPIXEL,
-        nativePixelCount(),
-      );
-      pixelBudget = Math.max(minimumBudget, pixelBudget * reduction);
+      pixelBudget = Math.max(minimumPixelBudget(), pixelBudget * reduction);
       slowWindows = 0;
       cooldownWindows = 2;
       if (pixelBudget < previousBudget - 1) {
@@ -213,11 +271,7 @@ export function createAdaptiveQuality({
 
     if (fastWindows >= 4 && cooldownWindows === 0) {
       const previousBudget = pixelBudget;
-      const maximumBudget = Math.min(
-        budgets.maximum * MEGAPIXEL,
-        nativePixelCount(),
-      );
-      pixelBudget = Math.min(maximumBudget, pixelBudget * 1.12);
+      pixelBudget = Math.min(maximumPixelBudget(), pixelBudget * 1.12);
       fastWindows = 0;
       cooldownWindows = 3;
       if (pixelBudget > previousBudget + 1) {
@@ -226,6 +280,85 @@ export function createAdaptiveQuality({
       }
     }
 
+    return false;
+  }
+
+  function applyGpuTiming(timing) {
+    if (!enabled || qualityLocked || !usesGpuTiming) return false;
+
+    const timingRevision = timing?.revision;
+    const sampleCount = timing?.sampleCount;
+    const medianFrameTimeMs = timing?.medianFrameTimeMs;
+    const p95FrameTimeMs = timing?.p95FrameTimeMs;
+    if (
+      !Number.isFinite(timingRevision)
+      || timingRevision === lastGpuTimingRevision
+      || !Number.isFinite(sampleCount)
+      || sampleCount < GPU_TIMING_MIN_SAMPLES
+      || !Number.isFinite(medianFrameTimeMs)
+      || medianFrameTimeMs <= 0
+      || !Number.isFinite(p95FrameTimeMs)
+      || p95FrameTimeMs <= 0
+    ) return false;
+
+    lastGpuTimingRevision = timingRevision;
+    gpuMedianFrameTimeMs = medianFrameTimeMs;
+    gpuP95FrameTimeMs = p95FrameTimeMs;
+
+    const frameBudgetMs = 1000 / gpuTargetFps;
+    const p95BudgetMs = frameBudgetMs * GPU_P95_BUDGET_RATIO;
+    const overloaded = p95FrameTimeMs > p95BudgetMs;
+    const severeOverload = p95FrameTimeMs > frameBudgetMs * GPU_SEVERE_P95_RATIO
+      || medianFrameTimeMs > frameBudgetMs * GPU_SEVERE_MEDIAN_RATIO;
+    const hasRecoveryHeadroom = p95FrameTimeMs <= frameBudgetMs * GPU_RECOVERY_P95_RATIO
+      && medianFrameTimeMs <= frameBudgetMs * GPU_RECOVERY_MEDIAN_RATIO;
+
+    if (overloaded) {
+      gpuTimingStatus = 'overloaded';
+      gpuSlowSamples += 1;
+      gpuFastSamples = 0;
+      if (!severeOverload && gpuSlowSamples < 2) return false;
+
+      const previousBudget = pixelBudget;
+      const minimumBudget = minimumPixelBudget();
+      const reduction = severeOverload ? 0.72 : 0.84;
+      // Remember that this budget was unsafe. The ceiling prevents recovery
+      // from repeatedly crossing an expensive capture/shadow tier boundary.
+      learnedMaximumPixelBudget = Math.min(
+        learnedMaximumPixelBudget,
+        Math.max(minimumBudget, previousBudget * 0.94),
+      );
+      pixelBudget = Math.max(minimumBudget, previousBudget * reduction);
+      gpuSlowSamples = 0;
+      cooldownWindows = 2;
+      slowWindows = 0;
+      fastWindows = 0;
+      if (pixelBudget < previousBudget - 1) {
+        revision += 1;
+        return true;
+      }
+      return false;
+    }
+
+    gpuSlowSamples = 0;
+    if (!hasRecoveryHeadroom) {
+      gpuTimingStatus = 'within-budget';
+      gpuFastSamples = 0;
+      return false;
+    }
+
+    gpuTimingStatus = 'headroom';
+    gpuFastSamples += 1;
+    if (gpuFastSamples < GPU_RECOVERY_SAMPLES) return false;
+
+    const previousBudget = pixelBudget;
+    pixelBudget = Math.min(maximumPixelBudget(), previousBudget * 1.08);
+    gpuFastSamples = 0;
+    cooldownWindows = 3;
+    if (pixelBudget > previousBudget + 1) {
+      revision += 1;
+      return true;
+    }
     return false;
   }
 
@@ -240,6 +373,7 @@ export function createAdaptiveQuality({
       lastTimestamp = null;
       sampleDuration = 0;
       sampleFrames = 0;
+      resetGpuSampling({ forgetLearnedLimit: true });
       return state();
     },
     observeFrame(timestamp) {
@@ -267,6 +401,14 @@ export function createAdaptiveQuality({
       return applyFrameRate(fps);
     },
     sampleFrameRate: applyFrameRate,
+    sampleGpuTiming: applyGpuTiming,
+    setTargetFrameRate(nextTargetFrameRate) {
+      const normalizedTarget = normalizeTargetFrameRate(nextTargetFrameRate);
+      if (normalizedTarget === gpuTargetFps) return gpuTargetFps;
+      gpuTargetFps = normalizedTarget;
+      resetGpuSampling({ forgetLearnedLimit: true });
+      return gpuTargetFps;
+    },
     resetFrameSampling() {
       lastTimestamp = null;
       sampleDuration = 0;
@@ -274,5 +416,6 @@ export function createAdaptiveQuality({
       slowWindows = 0;
       fastWindows = 0;
     },
+    resetGpuSampling,
   };
 }

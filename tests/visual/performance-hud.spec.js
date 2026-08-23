@@ -80,6 +80,7 @@ hudTest('caps rendering, graphs rendered FPS, and copies a diagnostic report', a
     'rendered FPS and callback cadence are not physical panel measurements',
   );
   expect(report).toContain('GPU pass (rolling 10 s):');
+  expect(report).toContain('Adaptive quality: GPU pass timing / 30 FPS target');
   expect(report).toContain('Renderer: webgpu pipeline');
   expect(report).toContain('Canvas:');
   expect(report).toContain('Quality:');

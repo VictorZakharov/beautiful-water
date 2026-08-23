@@ -105,6 +105,43 @@ describe('rolling GPU render-pass timing', () => {
     });
   });
 
+  test('restarts sampling cadence and ignores an in-flight result after reset', async () => {
+    let resolveTimestamp;
+    let resolutionRequests = 0;
+    const timer = createGpuFrameTimer({
+      isWebGPURenderer: true,
+      backend: { trackTimestamp: true },
+      resolveTimestampsAsync: () => {
+        resolutionRequests += 1;
+        return new Promise((resolve) => {
+          resolveTimestamp = resolve;
+        });
+      },
+    }, {
+      sampleInterval: 2,
+      now: () => 0,
+    });
+
+    timer.beginFrame();
+    timer.endFrame();
+    timer.beginFrame();
+    timer.endFrame();
+    expect(resolutionRequests).toBe(1);
+
+    timer.reset();
+    resolveTimestamp(18);
+    await finishTimestampResolution();
+    expect(timer.getState().sampleCount).toBe(0);
+
+    timer.beginFrame();
+    timer.endFrame();
+    expect(resolutionRequests).toBe(1);
+    timer.beginFrame();
+    timer.endFrame();
+    await finishTimestampResolution();
+    expect(resolutionRequests).toBe(2);
+  });
+
   test('polls non-blocking WebGL timer queries', () => {
     const query = {};
     const extension = {

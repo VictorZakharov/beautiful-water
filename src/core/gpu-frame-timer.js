@@ -116,6 +116,13 @@ export function createGpuFrameTimer(
   function reset() {
     samples.length = 0;
     samplingStartedAt = null;
+    renderedFrames = 0;
+    if (gl) {
+      if (activeQuery) gl.deleteQuery(activeQuery);
+      pendingQueries.forEach((query) => gl.deleteQuery(query));
+      pendingQueries.length = 0;
+      activeQuery = null;
+    }
     generation += 1;
     revision += 1;
   }
