@@ -1,0 +1,1 @@
+import"./three.core-BoMSk3Jx.js";import{dr as e}from"./three.webgpu-CxYX_zYw.js";export{e as WebGPURenderer};
