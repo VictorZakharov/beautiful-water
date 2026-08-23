@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 const visualSuite = process.env.VISUAL_SUITE ?? 'all';
 const hudTest = ['all', 'ci-scene'].includes(visualSuite) ? test : test.skip;
 
-hudTest('graphs presentation history and copies a diagnostic report', async ({ page }) => {
+hudTest('graphs browser callback history and copies a diagnostic report', async ({ page }) => {
   const browserErrors = [];
   page.on('console', (message) => {
     if (message.type() === 'error') {
@@ -44,8 +44,9 @@ hudTest('graphs presentation history and copies a diagnostic report', async ({ p
   await expect(page.locator('[data-fps-low]')).not.toHaveText('--');
   await expect(page.locator('[data-fps-history]')).toHaveAttribute(
     'aria-label',
-    /Presented FPS over the last/,
+    /Browser animation callbacks per second over the last/,
   );
+  await expect(page.locator('[data-display-note]')).toContainText('PANEL HZ UNKNOWN');
 
   await panel.click();
   await page.waitForFunction(() => (
@@ -55,18 +56,32 @@ hudTest('graphs presentation history and copies a diagnostic report', async ({ p
     () => window.__COPIED_PERFORMANCE_REPORT__,
   );
   expect(report).toContain('Beautiful Water performance report');
-  expect(report).toContain('Presented FPS:');
+  expect(report).toContain('Browser animation callbacks:');
   expect(report).toContain('1% low');
-  expect(report).toContain('Frame time: p50');
+  expect(report).toContain('Callback interval: p50');
   expect(report).toContain('CPU frame work: p50');
-  expect(report).toContain('Estimated refresh:');
+  expect(report).toContain('Browser callback cadence:');
+  expect(report).toContain('missed callback slots:');
+  expect(report).toContain('physical panel Hz unavailable to this page');
+  expect(report).toContain('callback cadence is not a panel measurement');
   expect(report).toContain('GPU pass (rolling 10 s):');
   expect(report).toContain('Renderer: webgpu pipeline');
   expect(report).toContain('Canvas:');
   expect(report).toContain('Quality:');
-  expect(report).toContain('Scene: surface');
+  expect(report).toContain('Scene: surface | frame draw calls');
+  const frameMetrics = report.match(
+    /Scene: surface \| frame draw calls (\d+) \| frame triangles (\d+)/,
+  );
+  expect(frameMetrics).not.toBeNull();
+  expect(Number(frameMetrics[1])).toBeGreaterThan(0);
+  expect(Number(frameMetrics[1])).toBeLessThan(1_000);
+  expect(Number(frameMetrics[2])).toBeGreaterThan(0);
   expect(report).toContain('Page state: visible | focused | DPR 1.00');
-  expect(report).toContain('User agent:');
+  expect(report).toContain('Runtime:');
+  expect(report).not.toContain('Runtime: Unknown browser');
+  expect(report).not.toContain('| Unknown platform');
+  expect(report).toContain('exact OS version unavailable to this page');
+  expect(report).toContain('User agent (raw):');
   expect(report).not.toContain('undefined');
   await expect(page.locator('[data-performance-copy]')).toHaveText(
     'COPIED 15S REPORT',

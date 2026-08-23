@@ -143,9 +143,15 @@ describe('rolling presentation monitor', () => {
         visibility: 'visible',
         focused: true,
         devicePixelRatio: 2,
+        multipleScreens: true,
       },
       pageUrl: 'https://example.test/',
-      userAgent: 'Test Browser',
+      runtime: {
+        browser: 'Google Chrome 151',
+        platform: 'Windows',
+        exactPlatformVersion: null,
+        rawUserAgent: 'Test Browser compatibility string',
+      },
     });
 
     expect(report).toContain('Beautiful Water performance report');
@@ -156,7 +162,25 @@ describe('rolling presentation monitor', () => {
     expect(report).toContain('webgpu pipeline / webgpu backend');
     expect(report).toContain('3840x2160 drawing buffer');
     expect(report).toContain('NVIDIA RTX 4070 Ti');
+    expect(report).toContain('Browser animation callbacks: 60.00/s average');
+    expect(report).toContain('Callback interval: p50 16.67 ms');
+    expect(report).toContain('Browser callback cadence: 60 callbacks/s estimated');
+    expect(report).toContain('missed callback slots: 0 estimated');
+    expect(report).toContain(
+      'Display context: multiple screens reported | physical panel Hz unavailable to this page',
+    );
+    expect(report).toContain(
+      'Timing caveat: callback cadence is not a panel measurement and may follow another screen',
+    );
+    expect(report).toContain('frame draw calls 42 | frame triangles 123456');
     expect(report).toContain('Page state: visible | focused | DPR 2.00');
+    expect(report).toContain(
+      'Runtime: Google Chrome 151 | Windows '
+        + '(exact OS version unavailable to this page)',
+    );
+    expect(report).toContain(
+      'User agent (raw): Test Browser compatibility string',
+    );
     expect(report).not.toContain('undefined');
     expect(report.split('\n').length).toBeGreaterThan(10);
   });

@@ -1,6 +1,6 @@
 // Resolving GPU query buffers is asynchronous but not free. Once per
-// 60 presented frames provides enough samples for a useful 10-second
-// distribution without perturbing the presentation cadence being measured.
+// 60 animation frames provides enough samples for a useful 10-second
+// distribution without perturbing the browser callback cadence being measured.
 const DEFAULT_SAMPLE_INTERVAL = 60;
 export const GPU_TIMING_WINDOW_MS = 10_000;
 

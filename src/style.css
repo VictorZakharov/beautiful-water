@@ -191,6 +191,13 @@ body {
   margin-top: 4px;
 }
 
+.fps__display-note {
+  margin-top: 6px;
+  color: rgb(255 192 122 / 68%);
+  font-size: 0.48rem;
+  letter-spacing: 0.12em;
+}
+
 .fps__copy {
   margin-top: 8px;
   color: rgb(211 236 236 / 40%);
